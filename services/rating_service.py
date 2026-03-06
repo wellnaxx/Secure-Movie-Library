@@ -38,7 +38,7 @@ def _parse_omdb_rating(response_data: dict[str, Any]) -> float | None:
     return rating if 0 <= rating <= 10 else None
 
 
-def _fetch_rating_from_omdb(title: str) -> tuple[float | None, str | None]:
+async def _fetch_rating_from_omdb(title: str) -> tuple[float | None, str | None]:
     """
     Fetch movie data from OMDb by title and return:
 
@@ -56,9 +56,10 @@ def _fetch_rating_from_omdb(title: str) -> tuple[float | None, str | None]:
     }
 
     try:
-        response = httpx.get(base_url, params=params, timeout=10.0)
-        response.raise_for_status()
-        data = response.json()
+        async with httpx.AsyncClient() as client:
+            response = await client.get(base_url, params=params, timeout=10.0)
+            response.raise_for_status()
+            data = response.json()
     except httpx.TimeoutException:
         return None, "OMDb request timed out."
     except httpx.HTTPStatusError as exc:
@@ -76,7 +77,7 @@ def _fetch_rating_from_omdb(title: str) -> tuple[float | None, str | None]:
     return rating, None
 
 
-def enrich_movie_rating(movie_id: int, title: str) -> None:
+async def enrich_movie_rating(movie_id: int, title: str) -> None:
     """
     Background task: fetch rating from OMDb and update the local movie record.
 
@@ -91,8 +92,8 @@ def enrich_movie_rating(movie_id: int, title: str) -> None:
     enrichment_error: str | None = None
 
     try:
-        rating, enrichment_error = _fetch_rating_from_omdb(title)
-    except Exception as exc: # pragma: no cover
+        rating, enrichment_error = await _fetch_rating_from_omdb(title)
+    except Exception as exc:  # pragma: no cover
         # Last-resort safety net so background task never crashes the app flow
         logger.exception(
             "Unexpected error during rating enrichment for movie_id=%s: %s",
@@ -109,7 +110,7 @@ def enrich_movie_rating(movie_id: int, title: str) -> None:
             updated_at=datetime.now(timezone.utc),
             enrichment_error=enrichment_error,
         )
-    except Exception as exc: # pragma: no cover
+    except Exception as exc:  # pragma: no cover
         logger.exception(
             "Failed to persist rating enrichment result for movie_id=%s: %s",
             movie_id,
