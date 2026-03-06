@@ -1,9 +1,3 @@
-"""
-Unit tests for services/user_service.py
-
-All repository and auth calls are mocked so no database or JWT signing is required.
-"""
-
 import unittest
 from datetime import datetime
 from unittest.mock import patch, call

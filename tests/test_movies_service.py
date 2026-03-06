@@ -1,10 +1,3 @@
-"""
-Unit tests for services/movies_service.py
-
-All repository calls are mocked so no database is required.
-"""
-
-
 import unittest
 from datetime import datetime
 from unittest.mock import patch, MagicMock
