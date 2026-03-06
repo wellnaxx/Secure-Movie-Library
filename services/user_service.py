@@ -120,10 +120,7 @@ def change_password(current_user: UserInternal, password_data: UserUpdate) -> No
 
     new_password_hash = hash_password(password_data.new_password)
 
-    updated_rows = update_password(current_user.id, new_password_hash)
-    if updated_rows == 0:
-        raise PasswordUpdateError("Password could not be updated.")
-
+    update_password(current_user.id, new_password_hash)
     bump_token_version(current_user.id)
 
 
