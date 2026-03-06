@@ -71,6 +71,11 @@ def update_movie(movie_id: int, fields: dict) -> int:
     if not fields:
         return 0
 
+    _ALLOWED_COLUMNS = {"title", "director", "release_year"}
+    unexpected = set(fields) - _ALLOWED_COLUMNS
+    if unexpected:
+        raise ValueError(f"Unexpected column(s) in update_movie fields: {unexpected}")
+
     updates = [f"{col} = ?" for col in fields]
     params = list(fields.values())
     params.append(movie_id)
@@ -82,6 +87,7 @@ def update_movie(movie_id: int, fields: dict) -> int:
     """
 
     return write_query(sql, tuple(params))
+
 
 def update_movie_rating(
     movie_id: int,
