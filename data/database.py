@@ -51,7 +51,15 @@ def load_db_config() -> DBConfig:
     )
 
 
-_DB_CONFIG: DBConfig = load_db_config()
+_DB_CONFIG: DBConfig | None = None
+
+
+def _get_db_config() -> DBConfig:
+    """Return the DB config, loading it lazily on first use."""
+    global _DB_CONFIG
+    if _DB_CONFIG is None:
+        _DB_CONFIG = load_db_config()
+    return _DB_CONFIG
 
 
 def set_db_config(config: DBConfig) -> None:
@@ -95,7 +103,7 @@ def read_query(sql: str, sql_params: tuple = ()) -> list[dict]:
     conn = None
     cursor = None
     try:
-        conn = _get_connection(_DB_CONFIG)
+        conn = _get_connection(_get_db_config())
         cursor = conn.cursor()
         cursor.execute(sql, sql_params)
         return _cursor_to_dicts(cursor)
@@ -116,7 +124,7 @@ def read_query_one(sql: str, sql_params: tuple = ()) -> dict | None:
     conn = None
     cursor = None
     try:
-        conn = _get_connection(_DB_CONFIG)
+        conn = _get_connection(_get_db_config())
         cursor = conn.cursor()
         cursor.execute(sql, sql_params)
         columns = [col[0] for col in cursor.description]
@@ -139,7 +147,7 @@ def insert_query(sql: str, sql_params: tuple = ()) -> int:
     conn = None
     cursor = None
     try:
-        conn = _get_connection(_DB_CONFIG)
+        conn = _get_connection(_get_db_config())
         cursor = conn.cursor()
         cursor.execute(sql, sql_params)
         conn.commit()
@@ -162,7 +170,7 @@ def write_query(sql: str, sql_params: tuple = ()) -> int:
     conn = None
     cursor = None
     try:
-        conn = _get_connection(_DB_CONFIG)
+        conn = _get_connection(_get_db_config())
         cursor = conn.cursor()
         cursor.execute(sql, sql_params)
         conn.commit()
