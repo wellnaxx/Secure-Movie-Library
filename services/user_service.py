@@ -136,9 +136,8 @@ def update_user_role(user_id: int, role: str) -> UserPublic:
     if get_user_by_id(user_id) is None:
         raise UserNotFoundError("User not found.")
 
-    if update_role(user_id, role) == 0:
-        raise RoleUpdateError("User role could not be updated.")
-
+    update_role(user_id, role)
+    
     updated_user = get_user_by_id(user_id)
     if updated_user is None:
         raise UserNotFoundError("User not found after role update.")

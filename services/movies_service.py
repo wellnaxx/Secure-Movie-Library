@@ -43,7 +43,7 @@ def list_movie_records(
 
 
 def get_movie_record(movie_id: int) -> MovieOut:
-    movie = get_movie(movie_id)
+    movie = get_movie(int(movie_id))
     if movie is None:
         raise MovieNotFoundError("Movie not found.")
 
@@ -59,10 +59,7 @@ def update_movie_record(movie_id: int, movie_data: MovieUpdate) -> MovieOut:
     if existing_movie is None:
         raise MovieNotFoundError("Movie not found.")
 
-    affected_rows = update_movie(movie_id=movie_id, fields=fields)
-
-    if affected_rows == 0:
-        raise MovieUpdateError("Movie could not be updated.")
+    update_movie(movie_id=movie_id, fields=fields)
 
     updated_movie = get_movie(movie_id)
     if updated_movie is None:
