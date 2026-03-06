@@ -1,3 +1,4 @@
+
 # Secure Movie Library
 
 ## Overview
@@ -41,37 +42,65 @@ Follow these steps to set up and run the application locally:
     mysql -u <user> -p < data/schema.sql
     ```
 
-3. **Configure environment variables**
+3. **Seed the database (optional but recommended for testing)**
+
+    The repository includes a `seed_data.sql` file that inserts example users and movies.
+
+    ```bash
+    mysql -u <user> -p < data/seed_data.sql
+    ```
+
+4. **Configure environment variables**
 
     Copy `.env.example` to `.env` and fill in your values:
     ```bash
     cp .env.example .env
     ```
 
-    | Variable | Description |
-    |---|---|
-    | `DB_HOST` | MariaDB host (e.g. `localhost`) |
-    | `DB_PORT` | MariaDB port (default `3306`) |
-    | `DB_NAME` | Database name (e.g. `movie_library`) |
-    | `DB_USER` | Database user |
-    | `DB_PASSWORD` | Database password |
-    | `JWT_SECRET_KEY` | Secret key, minimum 32 characters — generate with `openssl rand -hex 32` |
-    | `JWT_EXPIRATION_MINUTES` | Access token lifetime (default `30`) |
-    | `JWT_REFRESH_EXPIRATION_DAYS` | Refresh token lifetime (default `7`) |
-    | `OMDB_API_KEY` | Free API key from [omdbapi.com](https://www.omdbapi.com/apikey.aspx) |
-    | `OMDB_BASE_URL` | OMDb endpoint (default `https://www.omdbapi.com/`) |
-
-4. **Run the application**
+5. **Run the application**
     ```bash
     uvicorn main:app --reload
     ```
 
     The interactive API docs will be available at `http://localhost:8000/docs`.
 
-5. **Run the tests**
+6. **Run the tests**
     ```bash
     python -m pytest tests/
     ```
+
+## Postman Collection
+
+A ready-to-use **Postman collection** is included in the repository for testing the API.
+
+### Important Caveats
+
+The collection relies on seeded test data and therefore must be run in a specific order:
+
+1. **First run the database schema**
+   ```bash
+   mysql -u <user> -p < data/schema.sql
+   ```
+
+2. **Then seed the database**
+   ```bash
+   mysql -u <user> -p < data/seed_data.sql
+   ```
+
+3. **Only after that run the Postman collection**
+
+The collection assumes that the seeded admin account exists.
+
+### Resetting the Environment Between Runs
+
+Some requests modify the database (e.g., password changes). Because of this:
+
+- After running the collection, you must **rerun `seed_data.sql`** to reset the database.
+- You must also **reset the Postman collection variable `adminPassword` back to:**
+
+SecurePass123!
+
+Failing to reset the variable or reseed the database may cause authentication steps in the collection to fail.
 
 ## API Reference
 
@@ -113,7 +142,8 @@ Follow these steps to set up and run the application locally:
 ├── data/
 │   ├── database.py          # DB connection and query helpers
 │   ├── models.py            # Pydantic request/response models
-│   └── schema.sql           # Database schema
+│   ├── schema.sql           # Database schema
+│   └── seed_data.sql        # Example test data
 ├── auth/
 │   ├── jwt_handler.py       # Token creation and decoding
 │   └── hashing.py           # Password hashing
@@ -152,4 +182,4 @@ Follow these steps to set up and run the application locally:
 
 | Author | GitHub |
 |---|---|
-| Zdravko Kalchev| [@wellnaxx](https://github.com/wellnaxx) |
+| Zdravko Kalchev | https://github.com/wellnaxx |
