@@ -22,9 +22,7 @@ from utils.errors import (
     InvalidCredentialsError,
     InvalidRefreshTokenError,
     UserNotFoundError,
-    PasswordUpdateError,
     IncorrectOldPasswordError,
-    RoleUpdateError
 )
 
 

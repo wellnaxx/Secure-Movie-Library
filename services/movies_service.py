@@ -10,7 +10,6 @@ from repositories.movie_repository import (
 from utils.errors import (
     MovieCreationError,
     MovieNotFoundError,
-    MovieUpdateError,
     EmptyMovieUpdateError,
     MovieDeleteError
 )

@@ -7,7 +7,6 @@ from services.movies_service import (
     MovieCreationError,
     MovieDeleteError,
     MovieNotFoundError,
-    MovieUpdateError,
     create_movie_record,
     delete_movie_record,
     get_movie_record,
@@ -98,11 +97,6 @@ def update_movie_endpoint(
     except MovieNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        ) from exc
-    except MovieUpdateError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(exc),
         ) from exc
 

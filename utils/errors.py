@@ -21,15 +21,7 @@ class UserNotFoundError(UserServiceError):
     pass
 
 
-class PasswordUpdateError(UserServiceError):
-    pass
-
-
 class IncorrectOldPasswordError(UserServiceError):
-    pass
-
-
-class RoleUpdateError(UserServiceError):
     pass
 
 
@@ -42,10 +34,6 @@ class MovieNotFoundError(MovieServiceError):
 
 
 class MovieCreationError(MovieServiceError):
-    pass
-
-
-class MovieUpdateError(MovieServiceError):
     pass
 
 
