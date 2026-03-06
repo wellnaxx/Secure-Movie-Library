@@ -1,0 +1,36 @@
+USE movie_library;
+
+-- ------------------------------------
+-- Reset tables
+-- ------------------------------------
+
+SET FOREIGN_KEY_CHECKS = 0;
+
+TRUNCATE TABLE movies;
+TRUNCATE TABLE users;
+
+SET FOREIGN_KEY_CHECKS = 1;
+
+-- ------------------------------------
+-- Seed admin user
+-- ------------------------------------
+
+-- Password example: SecurePass123!
+-- Replace the hash if your hashing settings differ.
+
+INSERT INTO users (
+    username,
+    password_hash,
+    role,
+    token_version,
+    created_at,
+    updated_at
+)
+VALUES (
+    'admin',
+    '$2b$12$fXXYZLRXw5sO6h9mofbF5uBLhpts900d5ObYXWbaUI45jIajiq9ha',
+    'ADMIN',
+    0,
+    NOW(),
+    NOW()
+);
