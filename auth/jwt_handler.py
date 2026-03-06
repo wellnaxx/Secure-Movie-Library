@@ -14,17 +14,40 @@ from utils.env_vars import get_env_var
 
 load_dotenv()
 
-SECRET_KEY = get_env_var("JWT_SECRET_KEY")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(get_env_var("JWT_EXPIRATION_MINUTES", "30"))
-REFRESH_TOKEN_EXPIRE_DAYS = int(get_env_var("JWT_REFRESH_EXPIRATION_DAYS", "7"))
 
-if len(SECRET_KEY) < 32:
-    raise RuntimeError(
-        f"CRITICAL: JWT_SECRET_KEY must be at least 32 characters long for security.\n"
-        f"Current length: {len(SECRET_KEY)} characters.\n"
-        f"Generate a secure key with: openssl rand -hex 32"
-    )
+_SECRET_KEY: str | None = None
+_ACCESS_TOKEN_EXPIRE_MINUTES: int | None = None
+_REFRESH_TOKEN_EXPIRE_DAYS: int | None = None
+
+
+def _get_secret_key() -> str:
+    """Load and validate the JWT secret key lazily on first use."""
+    global _SECRET_KEY
+    if _SECRET_KEY is None:
+        key = get_env_var("JWT_SECRET_KEY")
+        if len(key) < 32:
+            raise RuntimeError(
+                f"CRITICAL: JWT_SECRET_KEY must be at least 32 characters long for security.\n"
+                f"Current length: {len(key)} characters.\n"
+                f"Generate a secure key with: openssl rand -hex 32"
+            )
+        _SECRET_KEY = key
+    return _SECRET_KEY
+
+
+def _get_access_expire_minutes() -> int:
+    global _ACCESS_TOKEN_EXPIRE_MINUTES
+    if _ACCESS_TOKEN_EXPIRE_MINUTES is None:
+        _ACCESS_TOKEN_EXPIRE_MINUTES = int(get_env_var("JWT_EXPIRATION_MINUTES", "30"))
+    return _ACCESS_TOKEN_EXPIRE_MINUTES
+
+
+def _get_refresh_expire_days() -> int:
+    global _REFRESH_TOKEN_EXPIRE_DAYS
+    if _REFRESH_TOKEN_EXPIRE_DAYS is None:
+        _REFRESH_TOKEN_EXPIRE_DAYS = int(get_env_var("JWT_REFRESH_EXPIRATION_DAYS", "7"))
+    return _REFRESH_TOKEN_EXPIRE_DAYS
 
 
 def create_token(data: dict, token_type: Literal["access", "refresh"] = "access") -> str:
@@ -74,9 +97,9 @@ def create_token(data: dict, token_type: Literal["access", "refresh"] = "access"
         raise ValueError("token_version is required in token data")
     
     now = datetime.now(timezone.utc)
-    expire = now + (timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = now + (timedelta(minutes=_get_access_expire_minutes)
                     if token_type == "access"
-                    else timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS))
+                    else timedelta(days=_get_refresh_expire_days))
     
     payload = {
         "sub": str(user_id),          
@@ -90,7 +113,7 @@ def create_token(data: dict, token_type: Literal["access", "refresh"] = "access"
         "token_version": int(token_version),
     }
     
-    encoded_jwt = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(payload, _get_secret_key, algorithm=ALGORITHM)
     
     return encoded_jwt
 
@@ -131,7 +154,7 @@ def decode_token(
         ...     print("Invalid or expired token")
     """
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, _get_secret_key, algorithms=[ALGORITHM])
         
         token_type = payload.get("type")
         if token_type != expected_type:
@@ -140,29 +163,6 @@ def decode_token(
         return payload
         
     except JWTError:
-        return None
-
-
-def get_user_id_from_token(token: str) -> Optional[int]:
-    """
-    Extract user ID from a token (convenience function).
-    
-    Args:
-        token: JWT token string
-        
-    Returns:
-        int: User ID if token is valid
-        None: If token is invalid
-    """
-    payload = decode_token(token)
-    
-    if not payload:
-        return None
-    
-    try:
-        user_id_str = payload.get("sub")
-        return int(user_id_str) if user_id_str else None
-    except (ValueError, TypeError):
         return None
 
 
