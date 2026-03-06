@@ -97,9 +97,9 @@ def create_token(data: dict, token_type: Literal["access", "refresh"] = "access"
         raise ValueError("token_version is required in token data")
     
     now = datetime.now(timezone.utc)
-    expire = now + (timedelta(minutes=_get_access_expire_minutes)
+    expire = now + (timedelta(minutes=_get_access_expire_minutes())
                     if token_type == "access"
-                    else timedelta(days=_get_refresh_expire_days))
+                    else timedelta(days=_get_refresh_expire_days()))
     
     payload = {
         "sub": str(user_id),          
@@ -113,7 +113,7 @@ def create_token(data: dict, token_type: Literal["access", "refresh"] = "access"
         "token_version": int(token_version),
     }
     
-    encoded_jwt = jwt.encode(payload, _get_secret_key, algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(payload, _get_secret_key(), algorithm=ALGORITHM)
     
     return encoded_jwt
 
@@ -154,7 +154,7 @@ def decode_token(
         ...     print("Invalid or expired token")
     """
     try:
-        payload = jwt.decode(token, _get_secret_key, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, _get_secret_key(), algorithms=[ALGORITHM])
         
         token_type = payload.get("type")
         if token_type != expected_type:
