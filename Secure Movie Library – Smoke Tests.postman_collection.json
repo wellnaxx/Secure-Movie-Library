@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "5b5355d6-ca04-4004-bcc3-000849520629",
     "name": "Secure Movie Library – Smoke Tests (Fixed)",
-    "description": "Smoke-test suite for Secure Movie Library FastAPI app.\n\nKEY FIXES vs v1:\n- Login uses application/x-www-form-urlencoded (OAuth2PasswordRequestForm)\n- Register uses application/json (custom Pydantic body)\n- Token capture uses pm.response.json() with null-guard\n- Removed 'Register ADMIN' — seed the first admin directly in the DB via seed_admin.py\n\nPRE-REQUISITES:\n1. App is running at baseUrl (default http://localhost:8000)\n2. A seed ADMIN account exists in the DB — set adminUsername + adminPassword variables to match\n3. Run the collection in order (folder by folder)",
+    "description": "Smoke-test suite for Secure Movie Library FastAPI app.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "50753553",
     "_collection_link": "https://go.postman.co/collection/50753553-5b5355d6-ca04-4004-bcc3-000849520629?source=collection_link"
@@ -1964,7 +1964,7 @@
     },
     {
       "key": "adminPassword",
-      "value": "Admin@Pass123"
+      "value": "SecurePass123!"
     },
     {
       "key": "userUsername",
