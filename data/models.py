@@ -1,12 +1,22 @@
 from __future__ import annotations
-from pydantic import BaseModel, Field, NonNegativeInt, field_validator, ConfigDict
+from pydantic import BaseModel, Field, NonNegativeInt, field_validator, ConfigDict, computed_field, model_validator
 from typing import Literal, Optional
 from datetime import datetime
 from utils.validators import validate_username, validate_password_strength, validate_movie_title, validate_release_year
+from enum import Enum
 
 ROLE = Literal["USER", "ADMIN"]
 SORT_FIELD = Literal["rating", "title", "release_year", "created_at"]
 SORT_ORDER = Literal["asc", "desc"]
+
+
+class EnrichmentStatus(str, Enum):
+    PENDING = "pending"       # rating is None, no error recorded yet
+    SUCCESS = "success"       # rating is populated
+    NOT_FOUND = "not_found"   # OMDb returned no match
+    FAILED = "failed"         # timeout, HTTP error, etc.
+
+
 
 
 class RefreshRequest(BaseModel):
@@ -152,6 +162,13 @@ class MovieUpdate(BaseModel):
     director: Optional[str] = Field(default=None, max_length=255)
     release_year: Optional[int] = Field(default=None, ge=0, le=9999)
 
+    @model_validator(mode="after")
+    def validate_title_not_explicitly_null(self) -> "MovieUpdate":
+        """Raise a clear error when the caller explicitly sends title=null."""
+        if "title" in self.model_fields_set and self.title is None:
+            raise ValueError("title cannot be set to null — it is a required field.")
+        return self
+
     @field_validator("title")
     @classmethod
     def validate_title(cls, v: Optional[str]) -> Optional[str]:
@@ -171,7 +188,7 @@ class MovieUpdate(BaseModel):
         Return a dict of fields that were explicitly included in the request.
 
         None values for director/release_year mean 'clear this field'.
-        title=None is treated as 'not provided' (title cannot be cleared).
+        title=None means 'not provided' (title cannot be cleared; validated above).
         """
         result = {}
         for field in ("director", "release_year"):
@@ -184,15 +201,20 @@ class MovieUpdate(BaseModel):
 
 class MovieOut(MovieBase):
     id: int
-    rating: Optional[float] = Field(default=None, ge=0.0, le=10.0)
+    rating: Optional[float] = None
     rating_source: Optional[str] = None
     rating_updated_at: Optional[datetime] = None
+    enrichment_error: Optional[str] = Field(default=None, exclude=True)  # kept internal
     created_at: datetime
     updated_at: datetime
 
-
-class MovieListQuery(BaseModel):
-    """Optional helper schema if you want to validate query params in one place."""
-    q: Optional[str] = Field(default=None, max_length=255, description="Filter by title (substring match).")
-    sort_by: SORT_FIELD = "rating"
-    order: SORT_ORDER = "desc"
+    @computed_field
+    @property
+    def enrichment_status(self) -> EnrichmentStatus:
+        if self.rating is not None:
+            return EnrichmentStatus.SUCCESS
+        if self.enrichment_error is None and self.rating_updated_at is None:
+            return EnrichmentStatus.PENDING
+        if self.enrichment_error == "Movie not found in OMDb.":
+            return EnrichmentStatus.NOT_FOUND
+        return EnrichmentStatus.FAILED
