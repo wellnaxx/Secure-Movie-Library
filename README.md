@@ -114,6 +114,7 @@ Failing to reset the variable or reseed the database may cause authentication st
 | `POST` | `/users/change-password` | Any | Change your password (invalidates all tokens) |
 | `GET` | `/users/me` | Any | Get your own profile |
 | `PATCH` | `/users/{id}/role` | Admin | Promote or demote a user |
+| `POST` | `/users/logout` | Any | Logout from the application |
 
 #### Movie endpoints (`/movies`)
 
