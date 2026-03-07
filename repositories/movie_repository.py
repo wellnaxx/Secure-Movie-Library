@@ -1,7 +1,14 @@
 from data.database import read_query, read_query_one, insert_query, write_query
+from typing import Literal
+
+AllowedMovieUpdateColumn = Literal["title", "director", "release_year"]
 
 
 def create_movie(title: str, director: str | None, release_year: int | None) -> int:
+    """
+    Insert a new movie record and return the new row's id.
+    """
+
     sql = """
         INSERT INTO movies (title, director, release_year)
         VALUES (?, ?, ?)
@@ -47,7 +54,7 @@ def list_movies(
         SELECT
             id, title, director, release_year,
             rating, rating_source, rating_updated_at,
-            created_at, updated_at
+            enrichment_error, created_at, updated_at
         FROM movies
         {where_sql}
         {order_sql}
@@ -57,24 +64,29 @@ def list_movies(
 
 
 def get_movie(movie_id: int) -> dict | None:
+    """
+    Fetch a single movie by id. Returns None if no matching record exists.
+    """
+
     sql = "SELECT * FROM movies WHERE id = ?"
     return read_query_one(sql, (movie_id,))
 
-def update_movie(movie_id: int, fields: dict) -> int:
+
+def update_movie(movie_id: int, fields: dict[AllowedMovieUpdateColumn, object]) -> int:
     """
     Update a movie record with the given fields.
 
     fields is a dict of column_name -> value produced by MovieUpdate.fields_to_update().
+    Only keys typed as AllowedMovieUpdateColumn ("title", "director", "release_year")
+    are accepted — invalid column names are caught at type-check time, not at runtime.
     Values may be None, which sets the column to NULL in the database.
     An empty dict is a no-op and returns 0.
+
+    Returns the number of affected rows.
     """
+
     if not fields:
         return 0
-
-    _ALLOWED_COLUMNS = {"title", "director", "release_year"}
-    unexpected = set(fields) - _ALLOWED_COLUMNS
-    if unexpected:
-        raise ValueError(f"Unexpected column(s) in update_movie fields: {unexpected}")
 
     updates = [f"{col} = ?" for col in fields]
     params = list(fields.values())
@@ -96,6 +108,14 @@ def update_movie_rating(
     updated_at,
     enrichment_error: str | None = None,
 ) -> int:
+    """
+    Persist the result of a rating enrichment attempt.
+
+    Sets rating, rating_source, rating_updated_at, and enrichment_error on the
+    given movie record. Pass rating=None and a non-None enrichment_error to record
+    a failed enrichment. Returns the number of affected rows.
+    """
+
     sql = """
         UPDATE movies
         SET rating = ?, rating_source = ?, rating_updated_at = ?, enrichment_error = ?
@@ -109,5 +129,8 @@ def update_movie_rating(
 
 
 def delete_movie(movie_id: int) -> int:
+    """
+    Delete a movie by id. Returns the number of affected rows (0 if not found).
+    """
     sql = "DELETE FROM movies WHERE id = ?"
     return write_query(sql, (movie_id,))
