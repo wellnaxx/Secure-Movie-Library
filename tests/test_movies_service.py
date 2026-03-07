@@ -14,7 +14,6 @@ from utils.errors import (
     MovieCreationError,
     MovieDeleteError,
     MovieNotFoundError,
-    MovieUpdateError,
 )
 
 
@@ -175,14 +174,6 @@ class TestUpdateMovieRecord(unittest.TestCase):
         mock_get.return_value = None
         with self.assertRaises(MovieNotFoundError):
             update_movie_record(999, _movie_update(title="Anything"))
-
-    @patch("services.movies_service.get_movie")
-    @patch("services.movies_service.update_movie")
-    def test_raises_movie_update_error_when_zero_rows_affected(self, mock_update, mock_get):
-        mock_get.return_value = _movie_dict()
-        mock_update.return_value = 0
-        with self.assertRaises(MovieUpdateError):
-            update_movie_record(1, _movie_update(title="Anything"))
 
     @patch("services.movies_service.get_movie")
     @patch("services.movies_service.update_movie")

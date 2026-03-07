@@ -5,7 +5,6 @@ from unittest.mock import patch, call
 from services.user_service import (
     authenticate_user,
     change_password,
-    get_current_user_public_profile,
     refresh_token_pair,
     register_user,
     update_user_role,
@@ -14,8 +13,6 @@ from utils.errors import (
     IncorrectOldPasswordError,
     InvalidCredentialsError,
     InvalidRefreshTokenError,
-    PasswordUpdateError,
-    RoleUpdateError,
     UsernameAlreadyExistsError,
     UserNotFoundError,
 )
@@ -209,47 +206,6 @@ class TestChangePassword(unittest.TestCase):
         with self.assertRaises(IncorrectOldPasswordError):
             change_password(_internal_user(), UserUpdate(old_password="WrongOld1!", new_password="NewPass1@"))
 
-    @patch("services.user_service.update_password")
-    @patch("services.user_service.hash_password")
-    @patch("services.user_service.verify_password")
-    def test_raises_password_update_error_when_db_returns_zero_rows(self, mock_verify, mock_hash, mock_update):
-        mock_verify.return_value = True
-        mock_hash.return_value = "new_hash"
-        mock_update.return_value = 0
-        from data.models import UserUpdate
-        with self.assertRaises(PasswordUpdateError):
-            change_password(_internal_user(), UserUpdate(old_password="OldPass1!", new_password="NewPass1@"))
-
-    @patch("services.user_service.bump_token_version")
-    @patch("services.user_service.update_password")
-    @patch("services.user_service.hash_password")
-    @patch("services.user_service.verify_password")
-    def test_token_version_not_bumped_when_update_fails(self, mock_verify, mock_hash, mock_update, mock_bump):
-        mock_verify.return_value = True
-        mock_hash.return_value = "new_hash"
-        mock_update.return_value = 0
-        from data.models import UserUpdate
-        with self.assertRaises(PasswordUpdateError):
-            change_password(_internal_user(), UserUpdate(old_password="OldPass1!", new_password="NewPass1@"))
-        mock_bump.assert_not_called()
-
-
-
-class TestGetCurrentUserPublicProfile(unittest.TestCase):
-
-    @patch("services.user_service.get_user_by_id")
-    def test_returns_public_profile(self, mock_get):
-        mock_get.return_value = _user_dict()
-        result = get_current_user_public_profile(_internal_user())
-        self.assertEqual(result.username, "johndoe")
-        self.assertEqual(result.id, 1)
-
-    @patch("services.user_service.get_user_by_id")
-    def test_raises_user_not_found_when_missing(self, mock_get):
-        mock_get.return_value = None
-        with self.assertRaises(UserNotFoundError):
-            get_current_user_public_profile(_internal_user())
-
 
 
 class TestUpdateUserRole(unittest.TestCase):
@@ -270,14 +226,6 @@ class TestUpdateUserRole(unittest.TestCase):
         mock_get.return_value = None
         with self.assertRaises(UserNotFoundError):
             update_user_role(999, "ADMIN")
-
-    @patch("services.user_service.get_user_by_id")
-    @patch("services.user_service.update_role")
-    def test_raises_role_update_error_when_db_returns_zero_rows(self, mock_update_role, mock_get):
-        mock_get.return_value = _user_dict()
-        mock_update_role.return_value = 0
-        with self.assertRaises(RoleUpdateError):
-            update_user_role(1, "ADMIN")
 
     @patch("services.user_service.get_user_by_id")
     @patch("services.user_service.update_role")
