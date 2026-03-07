@@ -125,7 +125,7 @@ def me(current_user: UserInternal = Depends(get_current_user)) -> UserPublic:
     )
 
 
-@users_router.patch("/{user_id}/role", response_model=UserPublic)
+@users_router.patch("/{user_id}/role", response_model=UserPublic, status_code=status.HTTP_200_OK)
 def set_user_role(
     user_id: int,
     role_update: UserRoleUpdate,
