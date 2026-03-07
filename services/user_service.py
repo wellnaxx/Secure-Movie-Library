@@ -122,14 +122,6 @@ def change_password(current_user: UserInternal, password_data: UserUpdate) -> No
     bump_token_version(current_user.id)
 
 
-def get_current_user_public_profile(current_user: UserInternal) -> UserPublic:
-    user_data = get_user_by_id(current_user.id)
-    if user_data is None:
-        raise UserNotFoundError("User not found.")
-
-    return UserPublic(**user_data)
-
-
 def update_user_role(user_id: int, role: str) -> UserPublic:
     if get_user_by_id(user_id) is None:
         raise UserNotFoundError("User not found.")
