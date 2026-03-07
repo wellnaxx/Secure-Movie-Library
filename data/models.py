@@ -160,7 +160,7 @@ class MovieUpdate(BaseModel):
 
     title: Optional[str] = Field(default=None, min_length=1, max_length=255)
     director: Optional[str] = Field(default=None, max_length=255)
-    release_year: Optional[int] = Field(default=None, ge=0, le=9999)
+    release_year: Optional[int] = Field(default=None, ge=1888, le=9999)
 
     @model_validator(mode="after")
     def validate_title_not_explicitly_null(self) -> "MovieUpdate":
