@@ -2,8 +2,6 @@
 FastAPI dependencies for authentication and authorization.
 """
 
-from typing import Optional
-
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
@@ -31,7 +29,7 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    user_id_str: Optional[str] = payload.get("sub")
+    user_id_str: str | None = payload.get("sub")
     if not user_id_str:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -41,12 +39,12 @@ def get_current_user(
 
     try:
         user_id = int(user_id_str)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload: subject must be a valid user ID.",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from exc
 
     user_data = get_user_by_id(user_id)
     if user_data is None:
@@ -60,12 +58,12 @@ def get_current_user(
 
     try:
         token_version = int(payload.get("token_version"))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload: missing or invalid token_version.",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from exc
 
     if token_version != user.token_version:
         raise HTTPException(
