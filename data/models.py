@@ -1,16 +1,34 @@
+"""Pydantic request and response schemas for users, authentication, and movies.
+
+Validators apply shared username, password, title, and release-year rules.
+Movie updates distinguish omitted fields from explicit null values, while movie
+responses expose rating enrichment status without revealing internal errors.
+"""
+
 from __future__ import annotations
-from pydantic import BaseModel, Field, NonNegativeInt, field_validator, ConfigDict, computed_field, model_validator
-from typing import Literal, Optional
+from pydantic import (
+    BaseModel,
+    Field,
+    NonNegativeInt,
+    ValidationInfo,
+    field_validator,
+    ConfigDict,
+    computed_field,
+    model_validator,
+)
+from typing import Literal, Optional, TypedDict
 from datetime import datetime
 from utils.validators import validate_username, validate_password_strength, validate_movie_title, validate_release_year
-from enum import Enum
+from enum import StrEnum
 
 ROLE = Literal["USER", "ADMIN"]
 SORT_FIELD = Literal["rating", "title", "release_year", "created_at"]
 SORT_ORDER = Literal["asc", "desc"]
 
 
-class EnrichmentStatus(str, Enum):
+class EnrichmentStatus(StrEnum):
+    """Outcome of the background OMDb rating lookup for a movie."""
+
     PENDING = "pending"       # rating is None, no error recorded yet
     SUCCESS = "success"       # rating is populated
     NOT_FOUND = "not_found"   # OMDb returned no match
@@ -20,6 +38,8 @@ class EnrichmentStatus(str, Enum):
 
 
 class RefreshRequest(BaseModel):
+    """Refresh token submitted to obtain a new pair of authentication tokens."""
+
     refresh_token: str
 
 class TokenPairResponse(BaseModel):
@@ -41,6 +61,7 @@ class UserBase(BaseModel):
     @field_validator("username")
     @classmethod
     def validate_username_field(cls, v: str) -> str:
+        """Validate the username using the shared registration rules."""
         return validate_username(v)
 
 class UserCreate(UserBase):
@@ -83,7 +104,12 @@ class UserUpdate(BaseModel):
 
     @field_validator("new_password")
     @classmethod
-    def validate_new_password(cls, v: str, info) -> str:
+    def validate_new_password(cls, v: str, info: ValidationInfo) -> str:
+        """Require a strong new password that differs from the old password.
+
+        The old password is read from fields already validated by Pydantic.
+        Raise ValueError when both passwords match or strength checks fail.
+        """
         old = info.data.get("old_password")
         if old and v == old:
             raise ValueError("New password must be different from old password.")
@@ -117,6 +143,8 @@ class UserInternal(BaseModel):
 
 
 class MovieBase(BaseModel):
+    """Shared movie fields with validated title and optional release details."""
+
     title: str = Field(min_length=1, max_length=255)
     director: Optional[str] = Field(default=None, max_length=255)
     release_year: Optional[int] = Field(default=None, ge=0, le=9999)  # final check in validator
@@ -125,22 +153,34 @@ class MovieBase(BaseModel):
     @field_validator("title")
     @classmethod
     def validate_title(cls, v: str) -> str:
+        """Validate the title using the shared movie title rules."""
         return validate_movie_title(v)
 
     @field_validator("release_year")
     @classmethod
     def validate_year(cls, v: Optional[int]) -> Optional[int]:
+        """Validate a supplied release year, preserving an unspecified year."""
         if v is None:
             return None
         return validate_release_year(v)
 
 
 class MovieCreate(MovieBase):
+    """Request schema for adding a movie before background rating enrichment."""
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {"title": "Inception", "director": "Christopher Nolan", "release_year": 2010}
         }
     )
+
+
+class MovieUpdateFields(TypedDict, total=False):
+    """Explicit movie changes, including nullable fields that may be cleared."""
+
+    title: str
+    director: str | None
+    release_year: int | None
 
 
 class MovieUpdate(BaseModel):
@@ -172,6 +212,7 @@ class MovieUpdate(BaseModel):
     @field_validator("title")
     @classmethod
     def validate_title(cls, v: Optional[str]) -> Optional[str]:
+        """Validate a supplied title; explicit null is rejected by the model validator."""
         if v is None:
             return None
         return validate_movie_title(v)
@@ -179,27 +220,34 @@ class MovieUpdate(BaseModel):
     @field_validator("release_year")
     @classmethod
     def validate_year(cls, v: Optional[int]) -> Optional[int]:
+        """Validate a supplied year, allowing null to clear the stored value."""
         if v is None:
             return None
         return validate_release_year(v)
 
-    def fields_to_update(self) -> dict:
+    def fields_to_update(self) -> MovieUpdateFields:
         """
         Return a dict of fields that were explicitly included in the request.
 
         None values for director/release_year mean 'clear this field'.
         title=None means 'not provided' (title cannot be cleared; validated above).
         """
-        result = {}
-        for field in ("director", "release_year"):
-            if field in self.model_fields_set:
-                result[field] = getattr(self, field)
+        result: MovieUpdateFields = {}
+        if "director" in self.model_fields_set:
+            result["director"] = self.director
+        if "release_year" in self.model_fields_set:
+            result["release_year"] = self.release_year
         if self.title is not None:
             result["title"] = self.title
         return result
 
 
 class MovieOut(MovieBase):
+    """Movie response with stored ratings, timestamps, and enrichment status.
+
+    The enrichment error is used to derive status but excluded from serialization.
+    """
+
     id: int
     rating: Optional[float] = None
     rating_source: Optional[str] = None
@@ -211,6 +259,12 @@ class MovieOut(MovieBase):
     @computed_field
     @property
     def enrichment_status(self) -> EnrichmentStatus:
+        """Derive lookup status from the rating, completion timestamp, and error.
+
+        A stored rating means success. Without a rating, an absent timestamp and
+        error mean pending; the OMDb not-found error has its own status, and all
+        other completed or failed lookups are reported as failed.
+        """
         if self.rating is not None:
             return EnrichmentStatus.SUCCESS
         if self.enrichment_error is None and self.rating_updated_at is None:
