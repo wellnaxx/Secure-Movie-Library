@@ -1,0 +1,93 @@
+[project]
+name = "secure-movie-library"
+version = "1.0.0"
+description = "A secure FastAPI application for managing movies and enriching them with OMDb ratings in the background."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi==0.115.0",
+    "uvicorn[standard]==0.30.6",
+    "python-dotenv==1.0.1",
+    "pydantic==2.9.2",
+    "python-jose[cryptography]==3.3.0",
+    "passlib==1.7.4",
+    "bcrypt==4.2.0",
+    "mariadb==1.1.10",
+    "httpx==0.27.2",
+    "python-multipart==0.0.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.15",
+    "pyright>=1.1",
+    "pytest>=8.3",
+    "ruff>=0.11",
+    "pymetrica>=1.5.6",
+]
+
+[tool.ruff]
+line-length = 112
+target-version = "py313"
+
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "build",
+    "dist",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    "data",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+extend-select = [
+    "ARG",
+    "C4",
+    "ICN",
+    "ISC",
+    "N",
+    "PERF",
+    "PIE",
+    "RET",
+    "RUF",
+    "T20",
+    "TRY",
+    "ERA",
+    "FAST",
+    "ANN",
+    "TCH"
+]
+ignore = [
+    "B008",     # do not perform function calls in argument defaults
+    "TRY003",   # long messages in raise — standard Python pattern, not worth custom exceptions
+    "ANN401",   # Any is sometimes necessary (decorators, serialization)
+    "TC006"
+]
+
+# Allow fixes for everything Ruff knows how to fix.
+# This is already the default, but keeping it explicit is nice.
+fixable = ["ALL"]
+
+# Prevent autofixing rules you want to review manually.
+unfixable = [
+    "F401",  # often worth reviewing, especially exports / __init__.py
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"data/models.py" = ["TRY003", "TC003"]
+"tests/**" = [
+    "ANN",      # test annotations not required
+    "ARG",      # unused mock/patch arguments are expected
+    "N801",     # test class naming convention (e.g. AuthLogin_Should)
+    "N803",     # argument name casing in tests
+    "N806",     # variable name casing in tests
+    "E702",     # multiple statements on one line (compact test setup)
+    "RUF003",   # ambiguous unicode in comments
+]
+
