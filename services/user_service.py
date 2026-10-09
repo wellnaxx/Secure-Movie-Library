@@ -7,7 +7,7 @@ from data.models import (
     UserUpdate,
 )
 from auth.hashing import hash_password, verify_password
-from auth.jwt_handler import create_access_token, create_refresh_token, decode_token
+from auth.jwt_handler import UserTokenData, create_access_token, create_refresh_token, decode_token
 from repositories.user_repository import (
     bump_token_version,
     create_user,
@@ -26,7 +26,7 @@ from utils.errors import (
 )
 
 
-def _build_token_payload(user: UserInternal) -> dict:
+def _build_token_payload(user: UserInternal) -> UserTokenData:
     return {
         "user_id": user.id,
         "username": user.username,

@@ -6,25 +6,50 @@ Implements RFC 7519 standard claims for security and interoperability.
 """
 
 import uuid
-from datetime import datetime, timezone, timedelta
-from jose import JWTError, jwt
-from typing import Optional, Literal
+from datetime import UTC, datetime, timedelta
+from typing import Literal, TypedDict, cast
+
 from dotenv import load_dotenv
+from jose import JWTError, jwt
+
 from utils.env_vars import get_env_var
 
 load_dotenv()
 
 ALGORITHM = "HS256"
 
-_SECRET_KEY: str | None = None
-_ACCESS_TOKEN_EXPIRE_MINUTES: int | None = None
-_REFRESH_TOKEN_EXPIRE_DAYS: int | None = None
+
+class UserTokenData(TypedDict):
+    """User information required to issue access and refresh tokens."""
+
+    user_id: int
+    username: str
+    role: Literal["USER", "ADMIN"]
+    token_version: int
+
+
+class JWTPayload(TypedDict):
+    """JWT claims; encoding converts datetime values to Unix timestamps."""
+
+    sub: str
+    iat: datetime | int
+    exp: datetime | int
+    jti: str
+    type: Literal["access", "refresh"]
+    username: str
+    role: Literal["USER", "ADMIN"]
+    token_version: int
+
+
+_secret_key: str | None = None
+_access_token_expire_minutes: int | None = None
+_refresh_token_expire_days: int | None = None
 
 
 def _get_secret_key() -> str:
     """Load and validate the JWT secret key lazily on first use."""
-    global _SECRET_KEY
-    if _SECRET_KEY is None:
+    global _secret_key
+    if _secret_key is None:
         key = get_env_var("JWT_SECRET_KEY")
         if len(key) < 32:
             raise RuntimeError(
@@ -32,25 +57,25 @@ def _get_secret_key() -> str:
                 f"Current length: {len(key)} characters.\n"
                 f"Generate a secure key with: openssl rand -hex 32"
             )
-        _SECRET_KEY = key
-    return _SECRET_KEY
+        _secret_key = key
+    return _secret_key
 
 
 def _get_access_expire_minutes() -> int:
-    global _ACCESS_TOKEN_EXPIRE_MINUTES
-    if _ACCESS_TOKEN_EXPIRE_MINUTES is None:
-        _ACCESS_TOKEN_EXPIRE_MINUTES = int(get_env_var("JWT_EXPIRATION_MINUTES", "30"))
-    return _ACCESS_TOKEN_EXPIRE_MINUTES
+    global _access_token_expire_minutes
+    if _access_token_expire_minutes is None:
+        _access_token_expire_minutes = int(get_env_var("JWT_EXPIRATION_MINUTES", "30"))
+    return _access_token_expire_minutes
 
 
 def _get_refresh_expire_days() -> int:
-    global _REFRESH_TOKEN_EXPIRE_DAYS
-    if _REFRESH_TOKEN_EXPIRE_DAYS is None:
-        _REFRESH_TOKEN_EXPIRE_DAYS = int(get_env_var("JWT_REFRESH_EXPIRATION_DAYS", "7"))
-    return _REFRESH_TOKEN_EXPIRE_DAYS
+    global _refresh_token_expire_days
+    if _refresh_token_expire_days is None:
+        _refresh_token_expire_days = int(get_env_var("JWT_REFRESH_EXPIRATION_DAYS", "7"))
+    return _refresh_token_expire_days
 
 
-def create_token(data: dict, token_type: Literal["access", "refresh"] = "access") -> str:
+def create_token(data: UserTokenData, token_type: Literal["access", "refresh"] = "access") -> str:
     """
     Create a JWT token with standard RFC 7519 claims.
     
@@ -67,7 +92,7 @@ def create_token(data: dict, token_type: Literal["access", "refresh"] = "access"
     
     Args:
         data: Dictionary containing user information.
-              Must include: user_id, username, role
+              Must include: user_id, username, role, token_version
         token_type: Type of token to create ("access" or "refresh")
               
     Returns:
@@ -85,7 +110,7 @@ def create_token(data: dict, token_type: Literal["access", "refresh"] = "access"
     user_id = data.get("user_id")
     username = data.get("username")
     role = data.get("role")
-    token_version = data.get("token_version")
+    token_version = data["token_version"]
     
     if not user_id:
         raise ValueError("user_id is required in token data")
@@ -93,35 +118,31 @@ def create_token(data: dict, token_type: Literal["access", "refresh"] = "access"
         raise ValueError("username is required in token data")
     if not role:
         raise ValueError("role is required in token data")
-    if token_version is None:
-        raise ValueError("token_version is required in token data")
     
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expire = now + (timedelta(minutes=_get_access_expire_minutes())
                     if token_type == "access"
                     else timedelta(days=_get_refresh_expire_days()))
     
-    payload = {
+    payload: JWTPayload = {
         "sub": str(user_id),          
         "iat": now,   
         "exp": expire, 
         "jti": str(uuid.uuid4()),     
         
         "type": token_type,            
-        "username": data.get("username"),
-        "role": data.get("role"),
+        "username": username,
+        "role": role,
         "token_version": int(token_version),
     }
-    
-    encoded_jwt = jwt.encode(payload, _get_secret_key(), algorithm=ALGORITHM)
-    
-    return encoded_jwt
+
+    return jwt.encode(dict(payload), _get_secret_key(), algorithm=ALGORITHM)
 
 
 def decode_token(
     token: str, 
     expected_type: Literal["access", "refresh"] = "access"
-) -> Optional[dict]:
+) -> JWTPayload | None:
     """
     Decode and verify a JWT token.
     
@@ -154,26 +175,25 @@ def decode_token(
         ...     print("Invalid or expired token")
     """
     try:
-        payload = jwt.decode(token, _get_secret_key(), algorithms=[ALGORITHM])
-        
+        payload = cast(JWTPayload, jwt.decode(token, _get_secret_key(), algorithms=[ALGORITHM]))
+    except JWTError:
+        return None
+    else:
         token_type = payload.get("type")
         if token_type != expected_type:
             return None
-        
         return payload
-        
-    except JWTError:
-        return None
+    
 
 
-def create_access_token(user_data: dict) -> str:
+def create_access_token(user_data: UserTokenData) -> str:
     """
     Create an access token (short-lived).
     
     Convenience wrapper around create_token() for access tokens.
     
     Args:
-        user_data: Dict with user_id, username, role
+        user_data: Dict with user_id, username, role, token_version
         
     Returns:
         str: Access token
@@ -181,7 +201,7 @@ def create_access_token(user_data: dict) -> str:
     return create_token(user_data, token_type="access")
 
 
-def create_refresh_token(user_data: dict) -> str:
+def create_refresh_token(user_data: UserTokenData) -> str:
     """
     Create a refresh token (long-lived).
     
@@ -194,7 +214,7 @@ def create_refresh_token(user_data: dict) -> str:
     - Add revocation mechanism
     
     Args:
-        user_data: Dict with user_id, username, role
+        user_data: Dict with user_id, username, role, token_version
         
     Returns:
         str: Refresh token
