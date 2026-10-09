@@ -47,7 +47,7 @@ Follow these steps to set up and run the application locally:
     The repository includes a `seed_data.sql` file that inserts example users and movies.
 
     ```bash
-    mysql -u <user> -p < data/seed_data.sql
+    mysql -u <user> -p <password> < data/seed_data.sql
     ```
 
 4. **Configure environment variables**
