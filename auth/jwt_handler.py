@@ -7,10 +7,11 @@ Implements RFC 7519 standard claims for security and interoperability.
 
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Literal, TypedDict, cast
+from typing import Literal, TypedDict
 
 from dotenv import load_dotenv
 from jose import JWTError, jwt
+from pydantic import TypeAdapter, ValidationError
 
 from utils.env_vars import get_env_var
 
@@ -39,6 +40,9 @@ class JWTPayload(TypedDict):
     username: str
     role: Literal["USER", "ADMIN"]
     token_version: int
+
+
+_jwt_payload_adapter: TypeAdapter[JWTPayload] = TypeAdapter(JWTPayload)
 
 
 _secret_key: str | None = None
@@ -150,6 +154,7 @@ def decode_token(
     - Token signature (using SECRET_KEY)
     - Token expiration (exp claim)
     - Token type matches expected type
+    - Required payload claims have the expected types
     
     Args:
         token: JWT token string to decode
@@ -175,8 +180,9 @@ def decode_token(
         ...     print("Invalid or expired token")
     """
     try:
-        payload = cast(JWTPayload, jwt.decode(token, _get_secret_key(), algorithms=[ALGORITHM]))
-    except JWTError:
+        decoded = jwt.decode(token, _get_secret_key(), algorithms=[ALGORITHM])
+        payload = _jwt_payload_adapter.validate_python(decoded, strict=True)
+    except (JWTError, ValidationError):
         return None
     else:
         token_type = payload.get("type")
