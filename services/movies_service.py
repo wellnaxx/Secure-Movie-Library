@@ -6,13 +6,7 @@ from repositories.movie_repository import (
     list_movies,
     update_movie,
 )
-
-from utils.errors import (
-    MovieCreationError,
-    MovieNotFoundError,
-    EmptyMovieUpdateError,
-    MovieDeleteError
-)
+from utils.errors import EmptyMovieUpdateError, MovieCreationError, MovieDeleteError, MovieNotFoundError
 
 
 def create_movie_record(movie_data: MovieCreate) -> MovieOut:
@@ -30,7 +24,7 @@ def create_movie_record(movie_data: MovieCreate) -> MovieOut:
     if created_movie is None:
         raise MovieCreationError("Movie was created, but could not be loaded afterwards.")
 
-    return MovieOut(**created_movie)
+    return MovieOut.model_validate(created_movie)
 
 
 def list_movie_records(
@@ -38,7 +32,7 @@ def list_movie_records(
     sort_by: str = "rating",
     order: str = "desc",
 ) -> list[MovieOut]:
-    return [MovieOut(**movie) for movie in list_movies(q=q, sort_by=sort_by, order=order)]
+    return [MovieOut.model_validate(movie) for movie in list_movies(q=q, sort_by=sort_by, order=order)]
 
 
 def get_movie_record(movie_id: int) -> MovieOut:
@@ -46,7 +40,7 @@ def get_movie_record(movie_id: int) -> MovieOut:
     if movie is None:
         raise MovieNotFoundError("Movie not found.")
 
-    return MovieOut(**movie)
+    return MovieOut.model_validate(movie)
 
 
 def update_movie_record(movie_id: int, movie_data: MovieUpdate) -> MovieOut:
@@ -64,7 +58,7 @@ def update_movie_record(movie_id: int, movie_data: MovieUpdate) -> MovieOut:
     if updated_movie is None:
         raise MovieNotFoundError("Movie not found after update.")
 
-    return MovieOut(**updated_movie)
+    return MovieOut.model_validate(updated_movie)
 
 
 def delete_movie_record(movie_id: int) -> None:
