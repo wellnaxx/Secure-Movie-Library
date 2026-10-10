@@ -1,7 +1,30 @@
-from data.database import read_query, read_query_one, insert_query, write_query
-from typing import Literal
+from datetime import datetime
+from decimal import Decimal
+from typing import TypedDict
 
-AllowedMovieUpdateColumn = Literal["title", "director", "release_year"]
+from pydantic import TypeAdapter
+
+from data.database import insert_query, read_query, read_query_one, write_query
+from data.models import MovieUpdateFields
+
+
+class MovieRow(TypedDict):
+    """Movie columns returned by MariaDB, including its decimal rating value."""
+
+    id: int
+    title: str
+    director: str | None
+    release_year: int | None
+    rating: Decimal | float | None
+    rating_source: str | None
+    rating_updated_at: datetime | None
+    enrichment_error: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+_movie_rows_adapter: TypeAdapter[list[MovieRow]] = TypeAdapter(list[MovieRow])
+_optional_movie_row_adapter: TypeAdapter[MovieRow | None] = TypeAdapter(MovieRow | None)
 
 
 def create_movie(title: str, director: str | None, release_year: int | None) -> int:
@@ -19,7 +42,7 @@ def list_movies(
     q: str | None = None,
     sort_by: str = "rating",
     order: str = "desc",
-) -> list[dict]:
+) -> list[MovieRow]:
     """
     List movies with optional title filter and safe sorting.
 
@@ -39,7 +62,7 @@ def list_movies(
     direction = "ASC" if str(order).lower() == "asc" else "DESC"
 
     where_sql = ""
-    params: list = []
+    params: list[str] = []
 
     if q:
         where_sql = "WHERE title LIKE ?"
@@ -60,24 +83,24 @@ def list_movies(
         {order_sql}
     """
 
-    return read_query(sql, tuple(params))
+    return _movie_rows_adapter.validate_python(read_query(sql, tuple(params)), strict=True)
 
 
-def get_movie(movie_id: int) -> dict | None:
+def get_movie(movie_id: int) -> MovieRow | None:
     """
     Fetch a single movie by id. Returns None if no matching record exists.
     """
 
     sql = "SELECT * FROM movies WHERE id = ?"
-    return read_query_one(sql, (movie_id,))
+    return _optional_movie_row_adapter.validate_python(read_query_one(sql, (movie_id,)), strict=True)
 
 
-def update_movie(movie_id: int, fields: dict[AllowedMovieUpdateColumn, object]) -> int:
+def update_movie(movie_id: int, fields: MovieUpdateFields) -> int:
     """
     Update a movie record with the given fields.
 
     fields is a dict of column_name -> value produced by MovieUpdate.fields_to_update().
-    Only keys typed as AllowedMovieUpdateColumn ("title", "director", "release_year")
+    Only keys defined by MovieUpdateFields ("title", "director", "release_year")
     are accepted — invalid column names are caught at type-check time, not at runtime.
     Values may be None, which sets the column to NULL in the database.
     An empty dict is a no-op and returns 0.
@@ -89,7 +112,7 @@ def update_movie(movie_id: int, fields: dict[AllowedMovieUpdateColumn, object]) 
         return 0
 
     updates = [f"{col} = ?" for col in fields]
-    params = list(fields.values())
+    params: list[object] = list(fields.values())
     params.append(movie_id)
 
     sql = f"""
@@ -105,7 +128,7 @@ def update_movie_rating(
     movie_id: int,
     rating: float | None,
     source: str | None,
-    updated_at,
+    updated_at: datetime | None,
     enrichment_error: str | None = None,
 ) -> int:
     """
