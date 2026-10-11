@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 
@@ -7,34 +9,31 @@ from data.models import (
     UserCreate,
     UserInternal,
     UserPublic,
-    UserUpdate,
     UserRoleUpdate,
+    UserUpdate,
 )
-from dependencies.auth import get_current_user, get_current_admin
+from dependencies.auth import get_current_admin, get_current_user
+from repositories.user_repository import bump_token_version
 from services.user_service import (
     authenticate_user,
     change_password,
     refresh_token_pair,
     register_user,
     update_user_role,
-    bump_token_version
 )
-
 from utils.errors import (
-    UsernameAlreadyExistsError,
+    IncorrectOldPasswordError,
     InvalidCredentialsError,
     InvalidRefreshTokenError,
+    UsernameAlreadyExistsError,
     UserNotFoundError,
-    IncorrectOldPasswordError,
 )
-
 
 users_router = APIRouter(prefix="/users", tags=["Authentication"])
 
 
 @users_router.post(
     "/register",
-    response_model=UserPublic,
     status_code=status.HTTP_201_CREATED,
 )
 def register(user_data: UserCreate) -> UserPublic:
@@ -54,10 +53,9 @@ def register(user_data: UserCreate) -> UserPublic:
 
 @users_router.post(
     "/login",
-    response_model=TokenPairResponse,
     status_code=status.HTTP_200_OK,
 )
-def login(form_data: OAuth2PasswordRequestForm = Depends()) -> TokenPairResponse:
+def login(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]) -> TokenPairResponse:
     try:
         return authenticate_user(
             username=form_data.username,
@@ -73,7 +71,6 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()) -> TokenPairResponse
 
 @users_router.post(
     "/refresh",
-    response_model=TokenPairResponse,
     status_code=status.HTTP_200_OK,
 )
 def refresh(refresh_request: RefreshRequest) -> TokenPairResponse:
@@ -99,11 +96,10 @@ def refresh(refresh_request: RefreshRequest) -> TokenPairResponse:
 )
 def change_user_password(
     password_data: UserUpdate,
-    current_user: UserInternal = Depends(get_current_user),
+    current_user: Annotated[UserInternal, Depends(get_current_user)],
 ) -> None:
     try:
         change_password(current_user, password_data)
-        return None
     except IncorrectOldPasswordError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -113,32 +109,33 @@ def change_user_password(
 
 @users_router.get(
     "/me",
-    response_model=UserPublic,
     status_code=status.HTTP_200_OK,
 )
-def me(current_user: UserInternal = Depends(get_current_user)) -> UserPublic:
+def me(current_user: Annotated[UserInternal, Depends(get_current_user)]) -> UserPublic:
     return UserPublic(
         id=current_user.id,
         username=current_user.username,
         role=current_user.role,
-        created_at=current_user.created_at
+        created_at=current_user.created_at,
     )
 
 
-@users_router.patch("/{user_id}/role", response_model=UserPublic, status_code=status.HTTP_200_OK)
+@users_router.patch(
+    "/{user_id}/role", status_code=status.HTTP_200_OK, dependencies=[Depends(get_current_admin)]
+)
 def set_user_role(
     user_id: int,
     role_update: UserRoleUpdate,
-    current_admin: UserInternal = Depends(get_current_admin),
 ) -> UserPublic:
     try:
         return update_user_role(user_id, role_update.role)
     except UserNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    
+
+
 @users_router.post(
     "/logout",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-def logout(current_user: UserInternal = Depends(get_current_user)) -> None:
+def logout(current_user: Annotated[UserInternal, Depends(get_current_user)]) -> None:
     bump_token_version(current_user.id)
