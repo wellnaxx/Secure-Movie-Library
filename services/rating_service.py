@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -96,9 +96,8 @@ async def enrich_movie_rating(movie_id: int, title: str) -> None:
     except Exception as exc:  # pragma: no cover
         # Last-resort safety net so background task never crashes the app flow
         logger.exception(
-            "Unexpected error during rating enrichment for movie_id=%s: %s",
+            "Unexpected error during rating enrichment for movie_id=%s",
             movie_id,
-            exc,
         )
         enrichment_error = f"Unexpected enrichment error: {exc}"
 
@@ -107,14 +106,13 @@ async def enrich_movie_rating(movie_id: int, title: str) -> None:
             movie_id=movie_id,
             rating=rating,
             source="OMDb",
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
             enrichment_error=enrichment_error,
         )
-    except Exception as exc:  # pragma: no cover
+    except Exception:  # pragma: no cover
         logger.exception(
-            "Failed to persist rating enrichment result for movie_id=%s: %s",
+            "Failed to persist rating enrichment result for movie_id=%s",
             movie_id,
-            exc,
         )
         return
 
