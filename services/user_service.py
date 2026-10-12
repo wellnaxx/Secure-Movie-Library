@@ -1,3 +1,5 @@
+from auth.hashing import hash_password, verify_password
+from auth.jwt_handler import UserTokenData, create_access_token, create_refresh_token, decode_token
 from data.models import (
     RefreshRequest,
     TokenPairResponse,
@@ -6,23 +8,20 @@ from data.models import (
     UserPublic,
     UserUpdate,
 )
-from auth.hashing import hash_password, verify_password
-from auth.jwt_handler import UserTokenData, create_access_token, create_refresh_token, decode_token
 from repositories.user_repository import (
     bump_token_version,
     create_user,
     get_user_by_id,
     get_user_by_username,
     update_password,
-    update_role
+    update_role,
 )
-
 from utils.errors import (
-    UsernameAlreadyExistsError,
+    IncorrectOldPasswordError,
     InvalidCredentialsError,
     InvalidRefreshTokenError,
+    UsernameAlreadyExistsError,
     UserNotFoundError,
-    IncorrectOldPasswordError,
 )
 
 
@@ -61,7 +60,7 @@ def register_user(user_data: UserCreate) -> UserPublic:
     if created_user is None:
         raise UserNotFoundError("User was created, but could not be loaded afterwards.")
 
-    return UserPublic(**created_user)
+    return UserPublic.model_validate(created_user)
 
 
 def authenticate_user(username: str, password: str) -> TokenPairResponse:
@@ -88,8 +87,8 @@ def refresh_token_pair(refresh_request: RefreshRequest) -> TokenPairResponse:
 
     try:
         user_id = int(user_id_str)
-    except (ValueError, TypeError):
-        raise InvalidRefreshTokenError("Invalid refresh token payload: invalid subject.")
+    except (ValueError, TypeError) as exc:
+        raise InvalidRefreshTokenError("Invalid refresh token payload: invalid subject.") from exc
 
     user_data = get_user_by_id(user_id)
     if user_data is None:
@@ -99,15 +98,13 @@ def refresh_token_pair(refresh_request: RefreshRequest) -> TokenPairResponse:
 
     try:
         token_version = int(payload.get("token_version"))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as exc:
         raise InvalidRefreshTokenError(
             "Invalid refresh token payload: missing or invalid token_version."
-        )
+        ) from exc
 
     if token_version != user.token_version:
-        raise InvalidRefreshTokenError(
-            "Refresh token has been revoked. Please log in again."
-        )
+        raise InvalidRefreshTokenError("Refresh token has been revoked. Please log in again.")
 
     return _issue_token_pair(user)
 
@@ -127,8 +124,8 @@ def update_user_role(user_id: int, role: str) -> UserPublic:
         raise UserNotFoundError("User not found.")
 
     update_role(user_id, role)
-    
+
     updated_user = get_user_by_id(user_id)
     if updated_user is None:
         raise UserNotFoundError("User not found after role update.")
-    return UserPublic(**updated_user)
+    return UserPublic.model_validate(updated_user)
