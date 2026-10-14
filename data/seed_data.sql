@@ -23,14 +23,12 @@ INSERT INTO users (
     password_hash,
     role,
     token_version,
-    created_at,
-    updated_at
+    created_at
 )
 VALUES (
     'admin',
     '$2b$12$fXXYZLRXw5sO6h9mofbF5uBLhpts900d5ObYXWbaUI45jIajiq9ha',
     'ADMIN',
     0,
-    NOW(),
     NOW()
 );

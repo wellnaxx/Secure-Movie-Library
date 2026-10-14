@@ -119,9 +119,15 @@ Afterward, admins can change roles through the API. Login accepts form fields `u
 
 ### Seed script and Postman collection
 
-[data/seed_data.sql](data/seed_data.sql) is currently out of sync with the schema: its admin insert includes `users.updated_at`, which does not exist in `schema.sql`. It also truncates both tables. Use the registration/admin setup above; reconcile the script before using it against a disposable database.
+[data/seed_data.sql](data/seed_data.sql) resets both tables and inserts an `admin` account with role `ADMIN`, password `SecurePass123!`, and token version `0`. Run it after `schema.sql` against a disposable development database; it deletes existing users and movies. It leaves the movie catalog empty.
 
-The bundled Postman smoke-test collection defaults to `http://localhost:8000`, username `admin`, and password `SecurePass123!`. Prepare that account first and check the collection variables against your environment. The collection changes passwords and token state and creates test data; reset credentials, token variables, and database state before repeating a run. The seed script is not currently a working reset procedure.
+From the MariaDB/MySQL interactive client:
+
+```sql
+SOURCE C:/path/to/Secure-Movie-Library/data/seed_data.sql;
+```
+
+The bundled Postman smoke-test collection defaults to `http://localhost:8000`, username `admin`, and password `SecurePass123!`. Seed or create that account first and check the collection variables against your environment. The collection changes passwords and token state and creates test data. To repeat a run against a disposable database, rerun `seed_data.sql`, reset `adminPassword` to `SecurePass123!`, and clear token and movie-ID variables.
 
 ## API reference
 
@@ -232,7 +238,7 @@ Coverage measures exercised code, not every possible input or live database beha
 │   ├── database.py               # Lazy settings, typed driver interfaces, query helpers
 │   ├── models.py                 # Pydantic schemas, validators, update types, status
 │   ├── schema.sql                # Database schema
-│   └── seed_data.sql             # Legacy seed/reset script; see compatibility note
+│   └── seed_data.sql             # Development reset and seeded admin account
 ├── auth/
 │   ├── jwt_handler.py            # Typed JWT creation and validation
 │   └── hashing.py                # Password hashing
