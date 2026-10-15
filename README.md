@@ -85,6 +85,7 @@ On Linux/macOS, use `cp .env.example .env`. Set the values in `.env` to match yo
 | `JWT_REFRESH_EXPIRATION_DAYS` | Refresh lifetime: `7` days |
 | `OMDB_API_KEY` | Required when running rating enrichment |
 | `OMDB_BASE_URL` | `https://www.omdbapi.com/` |
+| `OMDB_TIMEOUT_SECONDS` | HTTP timeout: `10` seconds; finite and greater than zero |
 
 Generate a signing secret with:
 
@@ -92,7 +93,20 @@ Generate a signing secret with:
 python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-Database and JWT settings are loaded lazily and cached; restart the process after changing them. `LOG_LEVEL` appears in `.env.example`, but the application currently does not read it to configure logging.
+Database, JWT, and OMDb settings use immutable typed configuration objects in `config/`. Each group loads `.env` and environment variables on first use, validates its settings, and caches the successful result. Database ports must be in the range 1-65535; connection timeouts and token lifetimes must be positive. Blank database hosts, names, usernames, signing secrets, and OMDb API keys are rejected. An empty database password is allowed. Signing secrets require at least 32 characters after excluding surrounding whitespace. OMDb endpoints must be absolute HTTP(S) URLs. Secrets are excluded from configuration object representations.
+
+Restart the process after changing environment settings. Tests and embedding applications can also replace or reset individual caches:
+
+```python
+from config.jwt import JWTConfig, get_jwt_config, load_jwt_config, set_jwt_config
+
+settings = get_jwt_config()        # Load once, then reuse the same object.
+fresh = load_jwt_config()          # Read fresh settings without changing the cache.
+set_jwt_config(JWTConfig(secret_key="a-development-only-secret-at-least-32-characters"))
+set_jwt_config(None)              # Reload from the environment on the next get.
+```
+
+`config.database` and `config.omdb` expose the same load/get/set pattern for `DBConfig` and `OMDbConfig`. Configuration groups load independently, so JWT operations do not require database or OMDb settings. The existing `data.database.DBConfig`, `load_db_config`, and `set_db_config` imports remain available. The JWT signing algorithm remains HS256 and the existing `JWT_SECRET_KEY` environment variable is unchanged. `LOG_LEVEL` appears in `.env.example`, but the application currently does not read it to configure logging.
 
 ### 4. Start the API and create an admin account
 
@@ -181,7 +195,7 @@ Missing movies produce `404`. Invalid or expired authentication produces `401`; 
 
 ### Rating enrichment
 
-Creation returns the movie before the background lookup completes. Enrichment uses an OMDb title lookup with a 10-second HTTP timeout and stores a rating between 0 and 10 when available. Updating a title does not automatically rerun enrichment.
+Creation returns the movie before the background lookup completes. Enrichment uses an OMDb title lookup with a configurable HTTP timeout (10 seconds by default) and stores a rating between 0 and 10 when available. Updating a title does not automatically rerun enrichment.
 
 Movie responses expose `enrichment_status`:
 
@@ -206,13 +220,13 @@ python -m pyright --pythonpath .venv/Scripts/python.exe
 
 On Linux/macOS, use `.venv/bin/python` for Pyright's interpreter path. Select the same environment in VS Code/Pylance so it can find runtime packages and type stubs. Ruff configuration is stored in `pyproject.toml`; strict Pyright settings are not currently committed there.
 
-The current suite contains **118 tests** covering database helpers, JWT handling and configuration, movie/user repositories, movie/user services, OMDb enrichment, and movie HTTP routes. Router tests exercise real JWT and role checks while mocking database access. Database, repository, and enrichment tests use mocks rather than live MariaDB or OMDb services; there is no dedicated users-router HTTP suite yet.
+The current suite contains **138 tests** covering typed configuration, database helpers, JWT handling, movie/user repositories, movie/user services, OMDb enrichment, and movie HTTP routes. Configuration tests cover defaults, validation, immutability, secret-safe representations, cache overrides/resets, and independent loading. Router tests exercise real JWT and role checks while mocking database access. Database, repository, and enrichment tests use mocks rather than live MariaDB or OMDb services; there is no dedicated users-router HTTP suite yet.
 
 For coverage, install the separate optional measurement tool:
 
 ```shell
 python -m pip install coverage
-python -m coverage run --branch --source=auth,data,dependencies,repositories,routers,services,utils -m unittest discover -s tests
+python -m coverage run --branch --source=auth,config,data,dependencies,repositories,routers,services,utils -m unittest discover -s tests
 python -m coverage report -m
 ```
 
@@ -224,6 +238,12 @@ Coverage measures exercised code, not every possible input or live database beha
 ├── main.py                       # FastAPI app and router registration
 ├── pyproject.toml                # Dependencies, development tools, Ruff settings
 ├── requirements.txt              # Pinned runtime installation requirements
+├── config/
+│   ├── __init__.py               # Configuration lifecycle documentation
+│   ├── _validation.py            # Shared environment parsing and validation
+│   ├── database.py               # Immutable DBConfig and load/get/set functions
+│   ├── jwt.py                    # Immutable JWTConfig and load/get/set functions
+│   └── omdb.py                   # Immutable OMDbConfig and load/get/set functions
 ├── routers/
 │   ├── movies.py                 # Movie endpoints
 │   └── users.py                  # Authentication and user endpoints
@@ -249,6 +269,7 @@ Coverage measures exercised code, not every possible input or live database beha
 │   ├── validators.py             # Shared field validation
 │   └── env_vars.py               # Environment variable access
 └── tests/
+    ├── test_config.py            # Settings validation, defaults, cache lifecycle
     ├── test_database.py          # Cleanup, transactions, result handling
     ├── test_jwt_handler.py       # JWT validation, expiration, settings, caching
     ├── test_movie_repository.py  # Movie queries, sorting, validation, failures

@@ -15,21 +15,19 @@ write_query(sql, params)    -> int   (affected row count)
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from importlib import import_module
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
-from dotenv import load_dotenv
-
-from utils.env_vars import get_env_var
+from config.database import DBConfig as DBConfig
+from config.database import get_db_config as _get_db_config
+from config.database import load_db_config as load_db_config
+from config.database import set_db_config as set_db_config
 from utils.errors import DatabaseError
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
 logger = logging.getLogger(__name__)
-
-load_dotenv()
 
 class Cursor(Protocol):
     """Database cursor operations used by this module."""
@@ -62,44 +60,6 @@ class Connection(Protocol):
     def rollback(self) -> None: ...
 
     def close(self) -> None: ...
-
-
-@dataclass(frozen=True)
-class DBConfig:
-    host: str
-    name: str
-    user: str
-    password: str
-    port: int = 3306
-    connect_timeout: int = 5
-
-
-def load_db_config() -> DBConfig:
-    return DBConfig(
-        host=get_env_var("DB_HOST"),
-        name=get_env_var("DB_NAME"),
-        user=get_env_var("DB_USER"),
-        password=get_env_var("DB_PASSWORD"),
-        port=int(get_env_var("DB_PORT", "3306")),
-        connect_timeout=int(get_env_var("DB_CONNECT_TIMEOUT", "5")),
-    )
-
-
-_db_config: DBConfig | None = None
-
-
-def _get_db_config() -> DBConfig:
-    """Return the DB config, loading it lazily on first use."""
-    global _db_config
-    if _db_config is None:
-        _db_config = load_db_config()
-    return _db_config
-
-
-def set_db_config(config: DBConfig) -> None:
-    """Override DB config (useful for tests)."""
-    global _db_config
-    _db_config = config
 
 
 def _get_connection(config: DBConfig) -> Connection:

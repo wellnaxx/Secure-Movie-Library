@@ -15,6 +15,7 @@ from auth.jwt_handler import (
     create_token,
     decode_token,
 )
+from config.jwt import JWTConfig, set_jwt_config
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -23,11 +24,14 @@ if TYPE_CHECKING:
 class JWTHandlerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.secret = "test-secret-for-jwt-validation-at-least-32-characters"
-        secret_patch = patch("auth.jwt_handler._get_secret_key", return_value=self.secret)
-        secret_patch.start()
-        self.addCleanup(secret_patch.stop)
+        config_patch = patch("auth.jwt_handler.get_jwt_config", return_value=JWTConfig(secret_key=self.secret))
+        config_patch.start()
+        self.addCleanup(config_patch.stop)
         self.user: UserTokenData = {
-            "user_id": 1, "username": "testuser", "role": "USER", "token_version": 0,
+            "user_id": 1,
+            "username": "testuser",
+            "role": "USER",
+            "token_version": 0,
         }
         now = datetime.now(UTC)
         self.payload: JWTPayload = {
@@ -42,12 +46,8 @@ class JWTHandlerTests(unittest.TestCase):
         }
 
     def test_access_and_refresh_tokens_round_trip(self) -> None:
-        with (
-            patch("auth.jwt_handler._get_access_expire_minutes", return_value=30),
-            patch("auth.jwt_handler._get_refresh_expire_days", return_value=7),
-        ):
-            access = create_access_token(self.user)
-            refresh = create_refresh_token(self.user)
+        access = create_access_token(self.user)
+        refresh = create_refresh_token(self.user)
         cases: list[tuple[str, Literal["access", "refresh"]]] = [(access, "access"), (refresh, "refresh")]
         for token, expected_type in cases:
             with self.subTest(expected_type=expected_type):
@@ -96,9 +96,8 @@ class JWTHandlerTests(unittest.TestCase):
 
     def test_admin_claims_and_unique_token_ids(self) -> None:
         admin: UserTokenData = {**self.user, "role": "ADMIN", "token_version": 4}
-        with patch("auth.jwt_handler._get_access_expire_minutes", return_value=30):
-            first = decode_token(create_access_token(admin))
-            second = decode_token(create_access_token(admin))
+        first = decode_token(create_access_token(admin))
+        second = decode_token(create_access_token(admin))
         if first is None or second is None:
             self.fail("Valid ADMIN tokens should decode")
         self.assertEqual(first["role"], "ADMIN")
@@ -143,14 +142,17 @@ class JWTConfigurationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.secret = "s" * 32
         self.user: UserTokenData = {
-            "user_id": 1, "username": "testuser", "role": "USER", "token_version": 0,
+            "user_id": 1,
+            "username": "testuser",
+            "role": "USER",
+            "token_version": 0,
         }
         patches = [
             patch.dict(os.environ, {"JWT_SECRET_KEY": self.secret}, clear=True),
-            patch("auth.jwt_handler._secret_key", None),
-            patch("auth.jwt_handler._access_token_expire_minutes", None),
-            patch("auth.jwt_handler._refresh_token_expire_days", None),
+            patch("config.jwt.load_dotenv"),
         ]
+        set_jwt_config(None)
+        self.addCleanup(set_jwt_config, None)
         for context in patches:
             context.start()
             self.addCleanup(context.stop)
@@ -165,11 +167,14 @@ class JWTConfigurationTests(unittest.TestCase):
         with patch.dict(os.environ, {"JWT_EXPIRATION_MINUTES": "12", "JWT_REFRESH_EXPIRATION_DAYS": "2"}):
             first_access = create_access_token(self.user)
             first_refresh = create_refresh_token(self.user)
-        with patch.dict(os.environ, {
-            "JWT_SECRET_KEY": "changed-secret-that-must-not-replace-cache",
-            "JWT_EXPIRATION_MINUTES": "99",
-            "JWT_REFRESH_EXPIRATION_DAYS": "99",
-        }):
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": "changed-secret-that-must-not-replace-cache",
+                "JWT_EXPIRATION_MINUTES": "99",
+                "JWT_REFRESH_EXPIRATION_DAYS": "99",
+            },
+        ):
             second_access = create_access_token(self.user)
             second_refresh = create_refresh_token(self.user)
         for token in (first_access, second_access):
@@ -199,6 +204,7 @@ class JWTConfigurationTests(unittest.TestCase):
             ("JWT_REFRESH_EXPIRATION_DAYS", create_refresh_token),
         ]
         for setting, create in cases:
+            set_jwt_config(None)
             for value in ("", "invalid", "1.5"):
                 with (
                     self.subTest(setting=setting, value=value),

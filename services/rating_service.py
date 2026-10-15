@@ -6,8 +6,8 @@ from typing import Any
 
 import httpx
 
+from config.omdb import get_omdb_config
 from repositories.movie_repository import update_movie_rating
-from utils.env_vars import get_env_var
 
 logger = logging.getLogger(__name__)
 
@@ -47,17 +47,16 @@ async def _fetch_rating_from_omdb(title: str) -> tuple[float | None, str | None]
 
     Does not raise on normal API/network failures; instead returns an error message.
     """
-    api_key = get_env_var("OMDB_API_KEY")
-    base_url = get_env_var("OMDB_BASE_URL", "https://www.omdbapi.com/")
+    config = get_omdb_config()
 
     params = {
-        "apikey": api_key,
+        "apikey": config.api_key,
         "t": title,
     }
 
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(base_url, params=params, timeout=10.0)
+            response = await client.get(config.base_url, params=params, timeout=config.timeout_seconds)
             response.raise_for_status()
             data = response.json()
     except httpx.TimeoutException:

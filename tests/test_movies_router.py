@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from jose import jwt
 
 from auth.jwt_handler import ALGORITHM, JWTPayload, UserTokenData, create_access_token, create_refresh_token
+from config.jwt import JWTConfig
 from data.models import MovieOut, UserInternal
 from dependencies.auth import get_current_admin, get_current_user
 from routers.movies import movies_router
@@ -303,8 +304,10 @@ class MoviesRouterTests(unittest.TestCase):
                 "created_at": datetime(2026, 1, 1),
             }
             with (
-                patch("auth.jwt_handler._get_secret_key", return_value="test-key-at-least-32-characters-long"),
-                patch("auth.jwt_handler._get_access_expire_minutes", return_value=30),
+                patch(
+                    "auth.jwt_handler.get_jwt_config",
+                    return_value=JWTConfig(secret_key="test-key-at-least-32-characters-long"),
+                ),
                 patch("dependencies.auth.get_user_by_id", return_value=row),
             ):
                 token = create_access_token(user)
@@ -344,9 +347,7 @@ class MoviesRouterTests(unittest.TestCase):
             "created_at": datetime(2026, 1, 1),
         }
         with (
-            patch("auth.jwt_handler._get_secret_key", return_value=secret),
-            patch("auth.jwt_handler._get_access_expire_minutes", return_value=30),
-            patch("auth.jwt_handler._get_refresh_expire_days", return_value=7),
+            patch("auth.jwt_handler.get_jwt_config", return_value=JWTConfig(secret_key=secret)),
         ):
             access = create_access_token(user)
             refresh = create_refresh_token(user)

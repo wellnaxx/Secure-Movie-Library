@@ -5,6 +5,7 @@ import unittest
 from contextlib import AbstractContextManager
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from config.omdb import OMDbConfig
 from services.rating_service import (
     _fetch_rating_from_omdb,
     _parse_omdb_rating,
@@ -60,18 +61,30 @@ def _make_async_client(mock_response: MagicMock) -> MagicMock:
     return cm
 
 
-def _test_env_value(key: str, default: str | None = None) -> str:
-    return "testkey" if key == "OMDB_API_KEY" else (default or "https://www.omdbapi.com/")
-
-
-def _mock_env() -> AbstractContextManager[MagicMock]:
+def _mock_config() -> AbstractContextManager[MagicMock]:
     return patch(
-        "services.rating_service.get_env_var",
-        side_effect=_test_env_value,
+        "services.rating_service.get_omdb_config",
+        return_value=OMDbConfig(api_key="testkey"),
     )
 
 
 class TestFetchRatingFromOmdb(unittest.IsolatedAsyncioTestCase):
+    async def test_http_request_uses_typed_configuration(self) -> None:
+        response = MagicMock()
+        response.json.return_value = {"Response": "True", "imdbRating": "8.8"}
+        context = _make_async_client(response)
+        config = OMDbConfig(api_key="custom-key", base_url="https://example.com/api", timeout_seconds=2.5)
+        with (
+            patch("services.rating_service.httpx.AsyncClient", return_value=context),
+            patch("services.rating_service.get_omdb_config", return_value=config),
+        ):
+            self.assertEqual(await _fetch_rating_from_omdb("Example"), (8.8, None))
+        context.__aenter__.return_value.get.assert_awaited_once_with(
+            "https://example.com/api",
+            params={"apikey": "custom-key", "t": "Example"},
+            timeout=2.5,
+        )
+
     async def test_returns_rating_on_successful_response(self) -> None:
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"Response": "True", "imdbRating": "8.8"}
@@ -79,7 +92,7 @@ class TestFetchRatingFromOmdb(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("services.rating_service.httpx.AsyncClient", return_value=_make_async_client(mock_resp)),
-            _mock_env(),
+            _mock_config(),
         ):
             rating, error = await _fetch_rating_from_omdb("Inception")
 
@@ -93,7 +106,7 @@ class TestFetchRatingFromOmdb(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("services.rating_service.httpx.AsyncClient", return_value=_make_async_client(mock_resp)),
-            _mock_env(),
+            _mock_config(),
         ):
             rating, error = await _fetch_rating_from_omdb("Unknown Movie")
 
@@ -109,7 +122,7 @@ class TestFetchRatingFromOmdb(unittest.IsolatedAsyncioTestCase):
         cm.__aenter__ = AsyncMock(return_value=mock_client)
         cm.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("services.rating_service.httpx.AsyncClient", return_value=cm), _mock_env():
+        with patch("services.rating_service.httpx.AsyncClient", return_value=cm), _mock_config():
             rating, error = await _fetch_rating_from_omdb("Inception")
 
         self.assertIsNone(rating)
@@ -129,7 +142,7 @@ class TestFetchRatingFromOmdb(unittest.IsolatedAsyncioTestCase):
         cm.__aenter__ = AsyncMock(return_value=mock_client)
         cm.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("services.rating_service.httpx.AsyncClient", return_value=cm), _mock_env():
+        with patch("services.rating_service.httpx.AsyncClient", return_value=cm), _mock_config():
             rating, error = await _fetch_rating_from_omdb("Inception")
 
         self.assertIsNone(rating)
@@ -144,7 +157,7 @@ class TestFetchRatingFromOmdb(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("services.rating_service.httpx.AsyncClient", return_value=_make_async_client(mock_resp)),
-            _mock_env(),
+            _mock_config(),
         ):
             rating, error = await _fetch_rating_from_omdb("Obscure Film")
 
