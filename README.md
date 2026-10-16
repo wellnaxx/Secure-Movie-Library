@@ -208,6 +208,16 @@ Movie responses expose `enrichment_status`:
 
 The internal `enrichment_error` is excluded from responses. OMDb error text is stored as returned, so a differently worded not-found message is reported as `failed`. Fetch and persistence failures are logged without undoing movie creation. Tasks run in the API process; there is no durable queue or automatic retry.
 
+## SQL query files
+
+Repository queries live in `data/sql/movies/` and `data/sql/users/`. The loader and typed query registry follow FleetFlow's pattern:
+
+- `data/loader.py` reads UTF-8 SQL relative to its own directory, strips surrounding whitespace, and caches successful reads. Paths must remain inside `data/sql/`; missing and empty files raise descriptive errors.
+- `data/queries.py` exposes `QUERIES.movies` and `QUERIES.users` as immutable typed query groups, loaded independently on first access and cached afterward.
+- Repositories select statements from the registry and pass values separately using MariaDB's `?` placeholders. Movie filtering, sorting, and partial updates use file-backed templates; only whitelisted columns, fixed sort directions, and trusted SQL fragments are formatted into them.
+
+For example, `create_user()` executes `QUERIES.users.create` from `data/sql/users/create.sql` with a separate tuple of username, password hash, and role. Restart the application after editing query files so both loader and registry caches are rebuilt. Deploy the SQL files alongside the Python modules.
+
 ## Testing and development checks
 
 The suite uses `unittest`, including asynchronous service tests and FastAPI `TestClient` HTTP tests:
@@ -220,7 +230,7 @@ python -m pyright --pythonpath .venv/Scripts/python.exe
 
 On Linux/macOS, use `.venv/bin/python` for Pyright's interpreter path. Select the same environment in VS Code/Pylance so it can find runtime packages and type stubs. Ruff configuration is stored in `pyproject.toml`; strict Pyright settings are not currently committed there.
 
-The current suite contains **138 tests** covering typed configuration, database helpers, JWT handling, movie/user repositories, movie/user services, OMDb enrichment, and movie HTTP routes. Configuration tests cover defaults, validation, immutability, secret-safe representations, cache overrides/resets, and independent loading. Router tests exercise real JWT and role checks while mocking database access. Database, repository, and enrichment tests use mocks rather than live MariaDB or OMDb services; there is no dedicated users-router HTTP suite yet.
+The current suite contains **151 tests** covering typed configuration, SQL loading, database helpers, JWT handling, movie/user repositories, movie/user services, OMDb enrichment, and movie HTTP routes. SQL-loader tests cover real files, caching, missing/empty files, path validation, working-directory independence, and lazy query groups. Configuration tests cover defaults, validation, immutability, secret-safe representations, cache overrides/resets, and independent loading. Router tests exercise real JWT and role checks while mocking database access. Database, repository, and enrichment tests use mocks rather than live MariaDB or OMDb services; there is no dedicated users-router HTTP suite yet.
 
 For coverage, install the separate optional measurement tool:
 
@@ -256,7 +266,28 @@ Coverage measures exercised code, not every possible input or live database beha
 │   └── user_repository.py        # User SQL and validated UserRow results
 ├── data/
 │   ├── database.py               # Lazy settings, typed driver interfaces, query helpers
+│   ├── loader.py                 # Cached UTF-8 SQL file loader
+│   ├── queries.py                # Lazy typed movie/user query registry
 │   ├── models.py                 # Pydantic schemas, validators, update types, status
+│   ├── sql/
+│   │   ├── movies/
+│   │   │   ├── create.sql
+│   │   │   ├── delete.sql
+│   │   │   ├── filter_by_title.sql
+│   │   │   ├── get_by_id.sql
+│   │   │   ├── list.sql
+│   │   │   ├── order_by.sql
+│   │   │   ├── order_by_rating.sql
+│   │   │   ├── update.sql
+│   │   │   ├── update_assignment.sql
+│   │   │   └── update_rating.sql
+│   │   └── users/
+│   │       ├── bump_token_version.sql
+│   │       ├── create.sql
+│   │       ├── get_by_id.sql
+│   │       ├── get_by_username.sql
+│   │       ├── update_password.sql
+│   │       └── update_role.sql
 │   ├── schema.sql                # Database schema
 │   └── seed_data.sql             # Development reset and seeded admin account
 ├── auth/
@@ -277,6 +308,7 @@ Coverage measures exercised code, not every possible input or live database beha
     ├── test_movies_router.py     # HTTP behavior, JWT/roles, background failures
     ├── test_movies_service.py    # Movie business rules
     ├── test_rating_service.py    # OMDb parsing, HTTP errors, persistence
+    ├── test_sql_loader.py        # SQL loading, cache, paths, lazy registry
     └── test_user_service.py      # Registration, authentication, account changes
 ```
 
