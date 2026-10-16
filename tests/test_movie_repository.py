@@ -127,6 +127,17 @@ class MovieRepositoryTests(unittest.TestCase):
             self.assertEqual(update_movie(1, {}), 0)
         query.assert_not_called()
 
+    def test_update_rejects_untrusted_column_names_before_querying(self) -> None:
+        update_unchecked: Callable[..., int] = update_movie
+        for column in ("rating", "title = NULL; DROP TABLE movies; --"):
+            with (
+                self.subTest(column=column),
+                patch("repositories.movie_repository.write_query") as query,
+                self.assertRaisesRegex(ValueError, "Unsupported movie update column"),
+            ):
+                update_unchecked(1, {column: "value"})
+            query.assert_not_called()
+
     def test_update_binds_values_in_column_order_and_allows_nulls(self) -> None:
         fields: MovieUpdateFields = {"title": "'quoted title'", "director": None, "release_year": None}
         for affected in (0, 1):

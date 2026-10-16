@@ -6,6 +6,7 @@ from pydantic import TypeAdapter
 
 from data.database import insert_query, read_query, read_query_one, write_query
 from data.models import MovieUpdateFields
+from data.queries import QUERIES
 
 
 class MovieRow(TypedDict):
@@ -32,11 +33,8 @@ def create_movie(title: str, director: str | None, release_year: int | None) -> 
     Insert a new movie record and return the new row's id.
     """
 
-    sql = """
-        INSERT INTO movies (title, director, release_year)
-        VALUES (?, ?, ?)
-    """
-    return insert_query(sql, (title, director, release_year))
+    return insert_query(QUERIES.movies.create, (title, director, release_year))
+
 
 def list_movies(
     q: str | None = None,
@@ -65,23 +63,15 @@ def list_movies(
     params: list[str] = []
 
     if q:
-        where_sql = "WHERE title LIKE ?"
+        where_sql = QUERIES.movies.filter_by_title
         params.append(f"%{q.strip()}%")
 
     if sort_col == "rating":
-        order_sql = f"ORDER BY (rating IS NULL) ASC, rating {direction}, id ASC"
+        order_sql = QUERIES.movies.order_by_rating.format(direction=direction)
     else:
-        order_sql = f"ORDER BY {sort_col} {direction}, id ASC"
+        order_sql = QUERIES.movies.order_by.format(column=sort_col, direction=direction)
 
-    sql = f"""
-        SELECT
-            id, title, director, release_year,
-            rating, rating_source, rating_updated_at,
-            enrichment_error, created_at, updated_at
-        FROM movies
-        {where_sql}
-        {order_sql}
-    """
+    sql = QUERIES.movies.list_all.format(where_clause=where_sql, order_clause=order_sql)
 
     return _movie_rows_adapter.validate_python(read_query(sql, tuple(params)), strict=True)
 
@@ -91,8 +81,10 @@ def get_movie(movie_id: int) -> MovieRow | None:
     Fetch a single movie by id. Returns None if no matching record exists.
     """
 
-    sql = "SELECT * FROM movies WHERE id = ?"
-    return _optional_movie_row_adapter.validate_python(read_query_one(sql, (movie_id,)), strict=True)
+    return _optional_movie_row_adapter.validate_python(
+        read_query_one(QUERIES.movies.get_by_id, (movie_id,)),
+        strict=True,
+    )
 
 
 def update_movie(movie_id: int, fields: MovieUpdateFields) -> int:
@@ -101,7 +93,7 @@ def update_movie(movie_id: int, fields: MovieUpdateFields) -> int:
 
     fields is a dict of column_name -> value produced by MovieUpdate.fields_to_update().
     Only keys defined by MovieUpdateFields ("title", "director", "release_year")
-    are accepted — invalid column names are caught at type-check time, not at runtime.
+    are accepted. Column names are checked before formatting the SQL template.
     Values may be None, which sets the column to NULL in the database.
     An empty dict is a no-op and returns 0.
 
@@ -111,15 +103,14 @@ def update_movie(movie_id: int, fields: MovieUpdateFields) -> int:
     if not fields:
         return 0
 
-    updates = [f"{col} = ?" for col in fields]
+    if any(column not in {"title", "director", "release_year"} for column in fields):
+        raise ValueError("Unsupported movie update column.")
+
+    updates = [QUERIES.movies.update_assignment.format(column=column) for column in fields]
     params: list[object] = list(fields.values())
     params.append(movie_id)
 
-    sql = f"""
-        UPDATE movies
-        SET {", ".join(updates)}
-        WHERE id = ?
-    """
+    sql = QUERIES.movies.update.format(assignments=", ".join(updates))
 
     return write_query(sql, tuple(params))
 
@@ -139,14 +130,8 @@ def update_movie_rating(
     a failed enrichment. Returns the number of affected rows.
     """
 
-    sql = """
-        UPDATE movies
-        SET rating = ?, rating_source = ?, rating_updated_at = ?, enrichment_error = ?
-        WHERE id = ?
-    """
-
     return write_query(
-        sql,
+        QUERIES.movies.update_rating,
         (rating, source, updated_at, enrichment_error, movie_id),
     )
 
@@ -155,5 +140,7 @@ def delete_movie(movie_id: int) -> int:
     """
     Delete a movie by id. Returns the number of affected rows (0 if not found).
     """
-    sql = "DELETE FROM movies WHERE id = ?"
-    return write_query(sql, (movie_id,))
+    return write_query(QUERIES.movies.delete, (movie_id,))
+
+
+"""Movie persistence using validated rows and file-backed parameterized SQL."""
