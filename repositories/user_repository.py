@@ -11,6 +11,7 @@ from typing import Literal, TypedDict
 from pydantic import TypeAdapter
 
 from data.database import insert_query, read_query_one, write_query
+from data.queries import QUERIES
 
 
 class UserRow(TypedDict):
@@ -32,11 +33,7 @@ def create_user(username: str, password_hash: str, role: str = "USER") -> int:
 
     The role defaults to USER. Database constraints enforce username uniqueness.
     """
-    sql = """
-        INSERT INTO users (username, password_hash, role)
-        VALUES (?, ?, ?)
-    """
-    return insert_query(sql, (username, password_hash, role))
+    return insert_query(QUERIES.users.create, (username, password_hash, role))
 
 
 def get_user_by_username(username: str) -> UserRow | None:
@@ -44,8 +41,10 @@ def get_user_by_username(username: str) -> UserRow | None:
 
     Invalid or missing column values raise Pydantic ValidationError.
     """
-    sql = "SELECT * FROM users WHERE username = ?"
-    return _user_row_adapter.validate_python(read_query_one(sql, (username,)), strict=True)
+    return _user_row_adapter.validate_python(
+        read_query_one(QUERIES.users.get_by_username, (username,)),
+        strict=True,
+    )
 
 
 def get_user_by_id(user_id: int) -> UserRow | None:
@@ -53,8 +52,7 @@ def get_user_by_id(user_id: int) -> UserRow | None:
 
     Invalid or missing column values raise Pydantic ValidationError.
     """
-    sql = "SELECT * FROM users WHERE id = ?"
-    return _user_row_adapter.validate_python(read_query_one(sql, (user_id,)), strict=True)
+    return _user_row_adapter.validate_python(read_query_one(QUERIES.users.get_by_id, (user_id,)), strict=True)
 
 
 def update_password(user_id: int, password_hash: str) -> int:
@@ -62,12 +60,7 @@ def update_password(user_id: int, password_hash: str) -> int:
 
     Token invalidation is a separate operation performed by bump_token_version.
     """
-    sql = """
-        UPDATE users
-        SET password_hash = ?
-        WHERE id = ?
-    """
-    return write_query(sql, (password_hash, user_id))
+    return write_query(QUERIES.users.update_password, (password_hash, user_id))
 
 
 def update_role(user_id: int, role: str) -> int:
@@ -75,12 +68,7 @@ def update_role(user_id: int, role: str) -> int:
 
     The caller enforces authorization and validates the requested role.
     """
-    sql = """
-        UPDATE users
-        SET role = ?
-        WHERE id = ?
-    """
-    return write_query(sql, (role, user_id))
+    return write_query(QUERIES.users.update_role, (role, user_id))
 
 
 def bump_token_version(user_id: int) -> int:
@@ -88,9 +76,4 @@ def bump_token_version(user_id: int) -> int:
 
     Authentication checks reject tokens carrying an older version.
     """
-    sql = """
-        UPDATE users
-        SET token_version = token_version + 1
-        WHERE id = ?
-    """
-    return write_query(sql, (user_id,))
+    return write_query(QUERIES.users.bump_token_version, (user_id,))
