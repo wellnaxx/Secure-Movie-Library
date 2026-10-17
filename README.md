@@ -12,6 +12,7 @@ A FastAPI REST API for a shared movie catalog, with JWT authentication, role-bas
 - Distinguish omitted movie update fields from explicit null values.
 - Validate database rows with Pydantic `TypeAdapter` and `TypedDict` schemas.
 - Use parameterized MariaDB queries without an ORM, with connection cleanup and write rollback on failure.
+- Configure application logging to stdout and optional rotating files, with HTTP status and response-time records.
 
 Movies are shared across accounts; the schema has no movie ownership relationship.
 
@@ -86,6 +87,8 @@ On Linux/macOS, use `cp .env.example .env`. Set the values in `.env` to match yo
 | `OMDB_API_KEY` | Required when running rating enrichment |
 | `OMDB_BASE_URL` | `https://www.omdbapi.com/` |
 | `OMDB_TIMEOUT_SECONDS` | HTTP timeout: `10` seconds; finite and greater than zero |
+| `LOG_LEVEL` | `INFO`; accepts `CRITICAL`, `ERROR`, `WARNING`, `INFO`, `DEBUG`, or `NOTSET` (case-insensitive) |
+| `LOG_FILE` | Optional file path; blank or unset means stdout only |
 
 Generate a signing secret with:
 
@@ -106,7 +109,7 @@ set_jwt_config(JWTConfig(secret_key="a-development-only-secret-at-least-32-chara
 set_jwt_config(None)              # Reload from the environment on the next get.
 ```
 
-`config.database` and `config.omdb` expose the same load/get/set pattern for `DBConfig` and `OMDbConfig`. Configuration groups load independently, so JWT operations do not require database or OMDb settings. The existing `data.database.DBConfig`, `load_db_config`, and `set_db_config` imports remain available. The JWT signing algorithm remains HS256 and the existing `JWT_SECRET_KEY` environment variable is unchanged. `LOG_LEVEL` appears in `.env.example`, but the application currently does not read it to configure logging.
+`config.database`, `config.omdb`, and `config.logging` expose the same load/get/set pattern for `DBConfig`, `OMDbConfig`, and `LoggingConfig`. Configuration groups load independently, so JWT operations do not require database or OMDb settings. The existing `data.database.DBConfig`, `load_db_config`, and `set_db_config` imports remain available. The JWT signing algorithm remains HS256 and the existing `JWT_SECRET_KEY` environment variable is unchanged.
 
 ### 4. Start the API and create an admin account
 
@@ -218,6 +221,29 @@ Repository queries live in `data/sql/movies/` and `data/sql/users/`. The loader 
 
 For example, `create_user()` executes `QUERIES.users.create` from `data/sql/users/create.sql` with a separate tuple of username, password hash, and role. Restart the application after editing query files so both loader and registry caches are rebuilt. Deploy the SQL files alongside the Python modules.
 
+## Application and request logging
+
+The FastAPI lifespan configures logging at startup, so the standard `python -m uvicorn main:app --reload` command enables it automatically. Application startup/shutdown and service records use a timestamp, severity, logger name, and message. `LOG_LEVEL` controls the minimum severity; invalid settings or an unwritable `LOG_FILE` destination fail startup.
+
+For optional file output, set:
+
+```dotenv
+LOG_LEVEL=INFO
+LOG_FILE=logs/application.log
+```
+
+File paths are relative to the working directory unless absolute. Parent directories are created automatically. File output uses UTF-8 and rotates at **10 MiB**, retaining **five backups**, alongside stdout output. Restart after changing settings; replacing the cached `LoggingConfig` alone does not reconfigure installed handlers.
+
+The request middleware records method, path, status, and elapsed milliseconds, for example:
+
+```text
+2026-10-17 12:00:00 | INFO     | middleware.request_logging | GET '/movies' -> 200 (3.2ms)
+```
+
+Response timing ends when the last body chunk has been sent, including streamed responses, and excludes subsequent background work. Handled errors keep their HTTP status. Unhandled failures include a traceback and propagate normally; failures after response completion are identified separately and retain the status already delivered to the client. WebSocket and lifespan messages pass through without HTTP request records.
+
+Request records exclude query strings, authorization headers, and request bodies; control characters in paths are escaped. Database debug records omit bound parameter values. Routine HTTP client URL logs are suppressed to avoid recording OMDb API keys, and Uvicorn's duplicate access records are disabled at ordinary INFO/DEBUG severity. Uvicorn's error logger remains available.
+
 ## Testing and development checks
 
 The suite uses `unittest`, including asynchronous service tests and FastAPI `TestClient` HTTP tests:
@@ -230,13 +256,13 @@ python -m pyright --pythonpath .venv/Scripts/python.exe
 
 On Linux/macOS, use `.venv/bin/python` for Pyright's interpreter path. Select the same environment in VS Code/Pylance so it can find runtime packages and type stubs. Ruff configuration is stored in `pyproject.toml`; strict Pyright settings are not currently committed there.
 
-The current suite contains **151 tests** covering typed configuration, SQL loading, database helpers, JWT handling, movie/user repositories, movie/user services, OMDb enrichment, and movie HTTP routes. SQL-loader tests cover real files, caching, missing/empty files, path validation, working-directory independence, and lazy query groups. Configuration tests cover defaults, validation, immutability, secret-safe representations, cache overrides/resets, and independent loading. Router tests exercise real JWT and role checks while mocking database access. Database, repository, and enrichment tests use mocks rather than live MariaDB or OMDb services; there is no dedicated users-router HTTP suite yet.
+The current suite contains **176 tests** covering typed configuration, application/request logging, SQL loading, database helpers, JWT handling, movie/user repositories, movie/user services, OMDb enrichment, and movie HTTP routes. Logging tests cover startup, level filtering, rotating files, cache lifecycle, request privacy, streaming, and exception handling. SQL-loader tests cover real files, caching, missing/empty files, path validation, working-directory independence, and lazy query groups. Configuration tests cover defaults, validation, immutability, secret-safe representations, cache overrides/resets, and independent loading. Router tests exercise real JWT and role checks while mocking database access. Database, repository, and enrichment tests use mocks rather than live MariaDB or OMDb services; there is no dedicated users-router HTTP suite yet.
 
 For coverage, install the separate optional measurement tool:
 
 ```shell
 python -m pip install coverage
-python -m coverage run --branch --source=auth,config,data,dependencies,repositories,routers,services,utils -m unittest discover -s tests
+python -m coverage run --branch --source=auth,config,data,dependencies,middleware,repositories,routers,services,utils -m unittest discover -s tests
 python -m coverage report -m
 ```
 
@@ -245,7 +271,7 @@ Coverage measures exercised code, not every possible input or live database beha
 ## Project structure
 
 ```text
-├── main.py                       # FastAPI app and router registration
+├── main.py                       # FastAPI app, lifespan logging, router registration
 ├── pyproject.toml                # Dependencies, development tools, Ruff settings
 ├── requirements.txt              # Pinned runtime installation requirements
 ├── config/
@@ -253,7 +279,11 @@ Coverage measures exercised code, not every possible input or live database beha
 │   ├── _validation.py            # Shared environment parsing and validation
 │   ├── database.py               # Immutable DBConfig and load/get/set functions
 │   ├── jwt.py                    # Immutable JWTConfig and load/get/set functions
+│   ├── logging.py                # Immutable LoggingConfig and load/get/set functions
 │   └── omdb.py                   # Immutable OMDbConfig and load/get/set functions
+├── middleware/
+│   ├── __init__.py
+│   └── request_logging.py        # ASGI request status, response timing, failure logs
 ├── routers/
 │   ├── movies.py                 # Movie endpoints
 │   └── users.py                  # Authentication and user endpoints
@@ -298,16 +328,19 @@ Coverage measures exercised code, not every possible input or live database beha
 ├── utils/
 │   ├── errors.py                 # Domain exceptions
 │   ├── validators.py             # Shared field validation
+│   ├── logging_config.py         # Stdout and rotating-file logging setup
 │   └── env_vars.py               # Environment variable access
 └── tests/
     ├── test_config.py            # Settings validation, defaults, cache lifecycle
     ├── test_database.py          # Cleanup, transactions, result handling
     ├── test_jwt_handler.py       # JWT validation, expiration, settings, caching
+    ├── test_logging.py           # Logging settings, levels, handlers, file rotation
     ├── test_movie_repository.py  # Movie queries, sorting, validation, failures
     ├── test_user_repository.py   # User queries, validation, parameter binding
     ├── test_movies_router.py     # HTTP behavior, JWT/roles, background failures
     ├── test_movies_service.py    # Movie business rules
     ├── test_rating_service.py    # OMDb parsing, HTTP errors, persistence
+    ├── test_request_logging.py   # HTTP logs, streaming, privacy, lifespan setup
     ├── test_sql_loader.py        # SQL loading, cache, paths, lazy registry
     └── test_user_service.py      # Registration, authentication, account changes
 ```
