@@ -23,6 +23,20 @@ class DatabaseTests(unittest.TestCase):
         self.cursor.close.assert_called_once_with()
         self.connection.close.assert_called_once_with()
 
+    def test_debug_logging_does_not_include_bound_parameter_values(self) -> None:
+        secret = "sensitive-password-hash"
+        self.cursor.fetchall.return_value = [(1, "Example")]
+        self.cursor.fetchone.return_value = (1, "Example")
+        self.cursor.lastrowid = 1
+        self.cursor.rowcount = 1
+        with self.assertLogs("data.database", level="DEBUG") as captured:
+            database.read_query("SELECT id, title WHERE password_hash = ?", (secret,))
+            database.read_query_one("SELECT id, title WHERE password_hash = ?", (secret,))
+            database.insert_query("INSERT INTO users (password_hash) VALUES (?)", (secret,))
+            database.write_query("UPDATE users SET password_hash = ?", (secret,))
+        self.assertEqual(len(captured.records), 4)
+        self.assertNotIn(secret, " ".join(captured.output))
+
     def test_connection_uses_typed_database_configuration(self) -> None:
         self.connection_patch.stop()
         driver = Mock()

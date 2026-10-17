@@ -111,7 +111,7 @@ def _inserted_row_id(cursor: Cursor) -> int:
 
 def read_query(sql: str, sql_params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
     """Execute a SELECT and return all rows as dicts."""
-    logger.debug("SELECT %s | params=%s", sql, sql_params)
+    logger.debug("SELECT %s", sql)
     conn = None
     cursor = None
     try:
@@ -132,7 +132,7 @@ def read_query(sql: str, sql_params: tuple[Any, ...] = ()) -> list[dict[str, Any
 
 def read_query_one(sql: str, sql_params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
     """Execute a SELECT and return the first row as a dict, or None."""
-    logger.debug("SELECT (one) %s | params=%s", sql, sql_params)
+    logger.debug("SELECT (one) %s", sql)
     conn = None
     cursor = None
     try:
@@ -155,7 +155,7 @@ def read_query_one(sql: str, sql_params: tuple[Any, ...] = ()) -> dict[str, Any]
 
 def insert_query(sql: str, sql_params: tuple[Any, ...] = ()) -> int:
     """Execute an INSERT and return the new row's id."""
-    logger.debug("INSERT %s | params=%s", sql, sql_params)
+    logger.debug("INSERT %s", sql)
     conn = None
     cursor = None
     try:
@@ -180,7 +180,7 @@ def insert_query(sql: str, sql_params: tuple[Any, ...] = ()) -> int:
 
 def write_query(sql: str, sql_params: tuple[Any, ...] = ()) -> int:
     """Execute an UPDATE or DELETE and return the affected row count."""
-    logger.debug("WRITE %s | params=%s", sql, sql_params)
+    logger.debug("WRITE %s", sql)
     conn = None
     cursor = None
     try:
