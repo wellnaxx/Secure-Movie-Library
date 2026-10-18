@@ -14,7 +14,7 @@ from repositories.user_repository import (
     update_password,
     update_role,
 )
-from utils.errors import DatabaseError
+from utils.errors import DatabaseError, DuplicateKeyError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -51,14 +51,18 @@ class UserRepositoryTests(unittest.TestCase):
 
     def test_both_lookups_reject_missing_columns_and_invalid_types(self) -> None:
         cases: list[dict[str, object]] = [
-            {key: value for key, value in self.row.items() if key != missing}
-            for missing in self.row
+            {key: value for key, value in self.row.items() if key != missing} for missing in self.row
         ]
         invalid_values: list[tuple[str, object]] = [
-            ("id", "1"), ("id", True), ("id", 1.5),
-            ("username", 123), ("password_hash", 123),
-            ("role", "SUPERUSER"), ("role", "user"),
-            ("token_version", "0"), ("token_version", False),
+            ("id", "1"),
+            ("id", True),
+            ("id", 1.5),
+            ("username", 123),
+            ("password_hash", 123),
+            ("role", "SUPERUSER"),
+            ("role", "user"),
+            ("token_version", "0"),
+            ("token_version", False),
             ("created_at", "2026-01-01T00:00:00"),
         ]
         cases.extend({**self.row, key: value} for key, value in invalid_values)
@@ -161,10 +165,10 @@ class UserRepositoryTests(unittest.TestCase):
             query.assert_called_once()
 
     def test_duplicate_username_error_is_propagated(self) -> None:
-        error = DatabaseError("Duplicate username")
+        error = DuplicateKeyError("Duplicate username")
         with (
             patch("repositories.user_repository.insert_query", side_effect=error),
-            self.assertRaises(DatabaseError) as caught,
+            self.assertRaises(DuplicateKeyError) as caught,
         ):
             create_user("testuser", "stored-hash")
         self.assertIs(caught.exception, error)

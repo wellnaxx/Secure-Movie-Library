@@ -12,6 +12,8 @@ from services.user_service import (
     update_user_role,
 )
 from utils.errors import (
+    DatabaseError,
+    DuplicateKeyError,
     IncorrectOldPasswordError,
     InvalidCredentialsError,
     InvalidRefreshTokenError,
@@ -56,6 +58,37 @@ def _refresh_payload(**overrides: Any) -> dict[str, Any]:
 
 
 class TestRegisterUser(unittest.TestCase):
+    def test_concurrent_duplicate_insert_is_translated_to_username_conflict(self) -> None:
+        from data.models import UserCreate
+
+        error = DuplicateKeyError("unique key conflict")
+        with (
+            patch("services.user_service.get_user_by_username", return_value=None),
+            patch("services.user_service.hash_password", return_value="stored-hash"),
+            patch("services.user_service.create_user", side_effect=error),
+            patch("services.user_service.get_user_by_id") as reload_user,
+            self.assertRaises(UsernameAlreadyExistsError) as caught,
+        ):
+            register_user(UserCreate(username="testuser", password="SecurePass1!"))
+        self.assertEqual(str(caught.exception), "Username is already taken.")
+        self.assertIs(caught.exception.__cause__, error)
+        reload_user.assert_not_called()
+
+    def test_non_conflict_database_errors_remain_distinct(self) -> None:
+        from data.models import UserCreate
+
+        error = DatabaseError("Database unavailable")
+        with (
+            patch("services.user_service.get_user_by_username", return_value=None),
+            patch("services.user_service.hash_password", return_value="stored-hash"),
+            patch("services.user_service.create_user", side_effect=error),
+            patch("services.user_service.get_user_by_id") as reload_user,
+            self.assertRaises(DatabaseError) as caught,
+        ):
+            register_user(UserCreate(username="testuser", password="SecurePass1!"))
+        self.assertIs(caught.exception, error)
+        reload_user.assert_not_called()
+
     @patch("services.user_service.get_user_by_id")
     @patch("services.user_service.create_user")
     @patch("services.user_service.hash_password")

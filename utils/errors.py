@@ -1,5 +1,17 @@
-class DatabaseError(RuntimeError):
-    """Raised when a database operation fails."""
+"""Driver-independent repository failures and application business errors."""
+
+
+class RepositoryError(RuntimeError):
+    """Base class for expected persistence failures exposed to services."""
+
+
+class DuplicateKeyError(RepositoryError):
+    """A write violated a unique constraint; callers may translate the conflict."""
+
+
+class DatabaseError(RepositoryError):
+    """A non-conflict database operation failed; the original cause is chained."""
+
 
 class UserServiceError(Exception):
     """Base auth/service error."""

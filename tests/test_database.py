@@ -2,7 +2,16 @@ import unittest
 from unittest.mock import Mock, patch
 
 from data import database
-from utils.errors import DatabaseError
+from utils.errors import DatabaseError, DuplicateKeyError, RepositoryError
+
+
+class DriverError(Exception):
+    """MariaDB-style error metadata without requiring the native driver in tests."""
+
+    def __init__(self, errno: int | None, sqlstate: str | None, message: str = "driver details") -> None:
+        super().__init__(message)
+        self.errno = errno
+        self.sqlstate = sqlstate
 
 
 class DatabaseTests(unittest.TestCase):
@@ -96,3 +105,87 @@ class DatabaseTests(unittest.TestCase):
         self.connection.rollback.assert_called_once_with()
         self.cursor.close.assert_called_once_with()
         self.connection.close.assert_called_once_with()
+
+    def test_duplicate_inserts_and_updates_raise_typed_conflicts(self) -> None:
+        for write in (database.insert_query, database.write_query):
+            self.cursor.reset_mock()
+            self.connection.reset_mock()
+            error = DriverError(1062, "23000", "private duplicate value")
+            self.cursor.execute.side_effect = error
+            with (
+                self.subTest(write=write),
+                self.assertNoLogs("data.database", level="ERROR"),
+                self.assertRaises(DuplicateKeyError) as caught,
+            ):
+                write("write statement", ("sensitive value",))
+            self.assertIsInstance(caught.exception, RepositoryError)
+            self.assertIs(caught.exception.__cause__, error)
+            self.assertNotIn("private duplicate value", str(caught.exception))
+            self.connection.commit.assert_not_called()
+            self.connection.rollback.assert_called_once_with()
+            self.cursor.close.assert_called_once_with()
+            self.connection.close.assert_called_once_with()
+
+    def test_other_driver_failures_do_not_become_duplicate_errors(self) -> None:
+        for code, state in (
+            (1452, "23000"),
+            (1048, "23000"),
+            (1064, "42000"),
+            (2002, "HY000"),
+            (1062, "HY000"),
+            (None, None),
+        ):
+            for write in (database.insert_query, database.write_query):
+                self.cursor.reset_mock()
+                self.connection.reset_mock()
+                error = DriverError(code, state, "duplicate key private driver details")
+                self.cursor.execute.side_effect = error
+                with (
+                    self.subTest(code=code, state=state, write=write),
+                    self.assertLogs("data.database", level="ERROR"),
+                    self.assertRaises(DatabaseError) as caught,
+                ):
+                    write("write statement")
+                self.assertNotIsInstance(caught.exception, DuplicateKeyError)
+                self.assertIs(caught.exception.__cause__, error)
+                self.assertNotIn("private driver details", str(caught.exception))
+                self.connection.rollback.assert_called_once_with()
+                self.cursor.close.assert_called_once_with()
+                self.connection.close.assert_called_once_with()
+
+    def test_read_failures_are_wrapped_with_their_original_cause(self) -> None:
+        for read in (database.read_query, database.read_query_one):
+            self.cursor.reset_mock()
+            self.connection.reset_mock()
+            error = DriverError(2002, "HY000", "private connection details")
+            self.cursor.execute.side_effect = error
+            with (
+                self.subTest(read=read),
+                self.assertLogs("data.database"),
+                self.assertRaises(DatabaseError) as caught,
+            ):
+                read("read statement")
+            self.assertIsInstance(caught.exception, RepositoryError)
+            self.assertIs(caught.exception.__cause__, error)
+            self.assertNotIn("private connection details", str(caught.exception))
+            self.connection.rollback.assert_not_called()
+            self.cursor.close.assert_called_once_with()
+            self.connection.close.assert_called_once_with()
+
+    def test_existing_repository_errors_are_preserved(self) -> None:
+        for operation in (
+            database.read_query,
+            database.read_query_one,
+            database.insert_query,
+            database.write_query,
+        ):
+            for error in (DatabaseError("already classified"), DuplicateKeyError("already classified")):
+                self.cursor.execute.side_effect = error
+                with (
+                    self.subTest(operation=operation, error=type(error).__name__),
+                    self.assertRaises(type(error)) as caught,
+                    patch("data.database.logger"),
+                ):
+                    operation("statement")
+                self.assertIs(caught.exception, error)
+                self.assertIsNone(caught.exception.__cause__)

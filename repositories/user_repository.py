@@ -1,8 +1,10 @@
 """Parameterized database operations for user accounts and authentication state.
 
 Lookups validate database rows against UserRow without coercing column values.
-Writes return generated IDs or affected row counts; database errors propagate to
-callers. Password hashing and authorization are handled by the service layer.
+Writes return generated IDs or affected row counts. DuplicateKeyError identifies
+unique-key conflicts; other database failures raise DatabaseError. These errors
+propagate unchanged to callers. Password hashing and authorization are handled
+by the service layer.
 """
 
 from datetime import datetime
@@ -32,6 +34,8 @@ def create_user(username: str, password_hash: str, role: str = "USER") -> int:
     """Insert a user with an already hashed password and return the generated ID.
 
     The role defaults to USER. Database constraints enforce username uniqueness.
+    Duplicate usernames raise DuplicateKeyError, including concurrent inserts
+    that race with a service's earlier username lookup.
     """
     return insert_query(QUERIES.users.create, (username, password_hash, role))
 

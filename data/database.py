@@ -22,12 +22,14 @@ from config.database import DBConfig as DBConfig
 from config.database import get_db_config as _get_db_config
 from config.database import load_db_config as load_db_config
 from config.database import set_db_config as set_db_config
-from utils.errors import DatabaseError
+from utils.errors import DatabaseError, DuplicateKeyError, RepositoryError
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+    from typing import NoReturn
 
 logger = logging.getLogger(__name__)
+
 
 class Cursor(Protocol):
     """Database cursor operations used by this module."""
@@ -109,6 +111,25 @@ def _inserted_row_id(cursor: Cursor) -> int:
     return lastrowid
 
 
+def _raise_repository_error(exc: Exception, operation: str) -> NoReturn:
+    """Translate MariaDB duplicate keys and other failures without parsing messages.
+
+    MariaDB error 1062 with SQL state 23000 identifies a duplicate unique key.
+    Other integrity, connection, and execution errors remain DatabaseError.
+    Existing repository errors retain their identity and cause. Driver details
+    stay in the chained exception and diagnostic logs, not in public messages.
+    """
+    if isinstance(exc, RepositoryError):
+        if not isinstance(exc, DuplicateKeyError):
+            logger.exception("Database %s failed", operation)
+        raise exc
+    if getattr(exc, "errno", None) == 1062 and getattr(exc, "sqlstate", None) == "23000":
+        logger.debug("Database %s rejected a duplicate key", operation)
+        raise DuplicateKeyError("A record with the same unique key already exists.") from exc
+    logger.exception("Database %s failed", operation)
+    raise DatabaseError(f"Database {operation} failed.") from exc
+
+
 def read_query(sql: str, sql_params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
     """Execute a SELECT and return all rows as dicts."""
     logger.debug("SELECT %s", sql)
@@ -120,14 +141,12 @@ def read_query(sql: str, sql_params: tuple[Any, ...] = ()) -> list[dict[str, Any
         cursor.execute(sql, sql_params)
         return _cursor_to_dicts(cursor)
     except Exception as exc:
-        logger.exception("Database read failed")
-        raise DatabaseError(f"Database read failed ({exc.__class__.__name__}): {exc}") from exc
+        _raise_repository_error(exc, "read")
     finally:
         if cursor is not None:
             cursor.close()
         if conn is not None:
             conn.close()
-
 
 
 def read_query_one(sql: str, sql_params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
@@ -143,8 +162,7 @@ def read_query_one(sql: str, sql_params: tuple[Any, ...] = ()) -> dict[str, Any]
         row = cursor.fetchone()
         return dict(zip(columns, row, strict=True)) if row else None
     except Exception as exc:
-        logger.exception("Database read failed")
-        raise DatabaseError(f"Database read failed ({exc.__class__.__name__}): {exc}") from exc
+        _raise_repository_error(exc, "read")
     finally:
         if cursor is not None:
             cursor.close()
@@ -152,9 +170,12 @@ def read_query_one(sql: str, sql_params: tuple[Any, ...] = ()) -> dict[str, Any]
             conn.close()
 
 
-
 def insert_query(sql: str, sql_params: tuple[Any, ...] = ()) -> int:
-    """Execute an INSERT and return the new row's id."""
+    """Insert a row, raising DuplicateKeyError for unique-key conflicts.
+
+    Other failures raise DatabaseError. Failed writes are rolled back and their
+    cursor and connection are closed before control returns to the caller.
+    """
     logger.debug("INSERT %s", sql)
     conn = None
     cursor = None
@@ -167,8 +188,7 @@ def insert_query(sql: str, sql_params: tuple[Any, ...] = ()) -> int:
     except Exception as exc:
         if conn is not None:
             conn.rollback()
-        logger.exception("Database insert failed")
-        raise DatabaseError(f"Database insert failed ({exc.__class__.__name__}): {exc}") from exc
+        _raise_repository_error(exc, "insert")
     else:
         return lastrowid
     finally:
@@ -179,7 +199,11 @@ def insert_query(sql: str, sql_params: tuple[Any, ...] = ()) -> int:
 
 
 def write_query(sql: str, sql_params: tuple[Any, ...] = ()) -> int:
-    """Execute an UPDATE or DELETE and return the affected row count."""
+    """Update/delete rows, raising DuplicateKeyError for unique-key conflicts.
+
+    Other failures raise DatabaseError. Failed writes are rolled back and their
+    cursor and connection are closed before control returns to the caller.
+    """
     logger.debug("WRITE %s", sql)
     conn = None
     cursor = None
@@ -192,8 +216,7 @@ def write_query(sql: str, sql_params: tuple[Any, ...] = ()) -> int:
     except Exception as exc:
         if conn is not None:
             conn.rollback()
-        logger.exception("Database write failed")
-        raise DatabaseError(f"Database write failed ({exc.__class__.__name__}): {exc}") from exc
+        _raise_repository_error(exc, "write")
     finally:
         if cursor is not None:
             cursor.close()

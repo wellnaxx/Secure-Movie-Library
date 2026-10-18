@@ -11,6 +11,7 @@ A FastAPI REST API for a shared movie catalog, with JWT authentication, role-bas
 - Validate usernames, password strength, movie titles, and release years with Pydantic.
 - Distinguish omitted movie update fields from explicit null values.
 - Validate database rows with Pydantic `TypeAdapter` and `TypedDict` schemas.
+- Distinguish unique-key conflicts from other persistence errors, including racing username registrations.
 - Use parameterized MariaDB queries without an ORM, with connection cleanup and write rollback on failure.
 - Configure application logging to stdout and optional rotating files, with HTTP status and response-time records.
 
@@ -196,6 +197,8 @@ This clears those two values and leaves the title unchanged. An omitted field st
 
 Missing movies produce `404`. Invalid or expired authentication produces `401`; authenticated non-admin movie writes produce `403`. Request validation errors produce `422`.
 
+Registering a username that already exists produces `409`, including when concurrent registrations both pass the initial availability check. Other database failures remain server errors rather than username conflicts.
+
 ### Rating enrichment
 
 Creation returns the movie before the background lookup completes. Enrichment uses an OMDb title lookup with a configurable HTTP timeout (10 seconds by default) and stores a rating between 0 and 10 when available. Updating a title does not automatically rerun enrichment.
@@ -220,6 +223,20 @@ Repository queries live in `data/sql/movies/` and `data/sql/users/`. The loader 
 - Repositories select statements from the registry and pass values separately using MariaDB's `?` placeholders. Movie filtering, sorting, and partial updates use file-backed templates; only whitelisted columns, fixed sort directions, and trusted SQL fragments are formatted into them.
 
 For example, `create_user()` executes `QUERIES.users.create` from `data/sql/users/create.sql` with a separate tuple of username, password hash, and role. Restart the application after editing query files so both loader and registry caches are rebuilt. Deploy the SQL files alongside the Python modules.
+
+## Repository error types
+
+Persistence errors are driver-independent classes defined in `utils/errors.py`:
+
+| Type | Meaning |
+|---|---|
+| `RepositoryError` | Common base for repository failures; retains `RuntimeError` compatibility |
+| `DuplicateKeyError` | Unique-key conflict, identified by MariaDB error `1062` and SQL state `23000` |
+| `DatabaseError` | Other database execution or connection failure |
+
+`DuplicateKeyError` and `DatabaseError` are separate subclasses of `RepositoryError`. The database helpers chain the original driver exception and preserve existing repository errors unchanged. Failed inserts and updates roll back and close their resources. General driver details are logged server-side; translated error messages do not embed them. Duplicate-key conflicts produce a generic debug record rather than an unexpected-failure traceback.
+
+Repositories propagate these errors to services. Registration catches `DuplicateKeyError` from the insert and translates it into `UsernameAlreadyExistsError`, which the users router maps to `409`. The initial username check remains an early rejection; the database unique constraint handles concurrent inserts. Foreign-key, nullability, syntax, and connection errors are not translated into username conflicts.
 
 ## Application and request logging
 
@@ -256,7 +273,7 @@ python -m pyright --pythonpath .venv/Scripts/python.exe
 
 On Linux/macOS, use `.venv/bin/python` for Pyright's interpreter path. Select the same environment in VS Code/Pylance so it can find runtime packages and type stubs. Ruff configuration is stored in `pyproject.toml`; strict Pyright settings are not currently committed there.
 
-The current suite contains **176 tests** covering typed configuration, application/request logging, SQL loading, database helpers, JWT handling, movie/user repositories, movie/user services, OMDb enrichment, and movie HTTP routes. Logging tests cover startup, level filtering, rotating files, cache lifecycle, request privacy, streaming, and exception handling. SQL-loader tests cover real files, caching, missing/empty files, path validation, working-directory independence, and lazy query groups. Configuration tests cover defaults, validation, immutability, secret-safe representations, cache overrides/resets, and independent loading. Router tests exercise real JWT and role checks while mocking database access. Database, repository, and enrichment tests use mocks rather than live MariaDB or OMDb services; there is no dedicated users-router HTTP suite yet.
+The current suite contains **186 tests** covering typed configuration, application/request logging, SQL loading, database helpers, JWT handling, movie/user repositories, movie/user services, OMDb enrichment, and HTTP routes. Typed-error tests cover duplicate classification, unrelated integrity/connection failures, rollback and cleanup, original exception causes, and registration conflicts after a successful pre-check. Logging tests cover startup, level filtering, rotating files, cache lifecycle, request privacy, streaming, and exception handling. SQL-loader tests cover real files, caching, missing/empty files, path validation, working-directory independence, and lazy query groups. Configuration tests cover defaults, validation, immutability, secret-safe representations, cache overrides/resets, and independent loading. Movie-router tests exercise real JWT and role checks while mocking database access. Users-router HTTP tests currently cover registration. Database, repository, and enrichment tests use mocks rather than live MariaDB or OMDb services.
 
 For coverage, install the separate optional measurement tool:
 
@@ -326,7 +343,7 @@ Coverage measures exercised code, not every possible input or live database beha
 ├── dependencies/
 │   └── auth.py                   # Bearer-token authentication and admin authorization
 ├── utils/
-│   ├── errors.py                 # Domain exceptions
+│   ├── errors.py                 # Typed repository failures and service exceptions
 │   ├── validators.py             # Shared field validation
 │   ├── logging_config.py         # Stdout and rotating-file logging setup
 │   └── env_vars.py               # Environment variable access
@@ -342,7 +359,8 @@ Coverage measures exercised code, not every possible input or live database beha
     ├── test_rating_service.py    # OMDb parsing, HTTP errors, persistence
     ├── test_request_logging.py   # HTTP logs, streaming, privacy, lifespan setup
     ├── test_sql_loader.py        # SQL loading, cache, paths, lazy registry
-    └── test_user_service.py      # Registration, authentication, account changes
+    ├── test_user_service.py      # Registration, authentication, account changes
+    └── test_users_router.py      # Registration HTTP success and typed-error mapping
 ```
 
 ## Database diagram

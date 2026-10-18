@@ -17,6 +17,7 @@ from repositories.user_repository import (
     update_role,
 )
 from utils.errors import (
+    DuplicateKeyError,
     IncorrectOldPasswordError,
     InvalidCredentialsError,
     InvalidRefreshTokenError,
@@ -45,16 +46,20 @@ def _issue_token_pair(user: UserInternal) -> TokenPairResponse:
 
 
 def register_user(user_data: UserCreate) -> UserPublic:
+    """Register a USER, translating both pre-existing and racing username conflicts."""
     existing_user = get_user_by_username(user_data.username)
     if existing_user is not None:
         raise UsernameAlreadyExistsError("Username is already taken.")
 
     password_hash = hash_password(user_data.password)
-    new_user_id = create_user(
-        username=user_data.username,
-        password_hash=password_hash,
-        role="USER",
-    )
+    try:
+        new_user_id = create_user(
+            username=user_data.username,
+            password_hash=password_hash,
+            role="USER",
+        )
+    except DuplicateKeyError as exc:
+        raise UsernameAlreadyExistsError("Username is already taken.") from exc
 
     created_user = get_user_by_id(new_user_id)
     if created_user is None:
