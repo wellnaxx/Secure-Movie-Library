@@ -17,6 +17,7 @@ from utils.errors import (
     IncorrectOldPasswordError,
     InvalidCredentialsError,
     InvalidRefreshTokenError,
+    UserCreationError,
     UsernameAlreadyExistsError,
     UserNotFoundError,
 )
@@ -126,7 +127,7 @@ class TestRegisterUser(unittest.TestCase):
     @patch("services.user_service.create_user")
     @patch("services.user_service.hash_password")
     @patch("services.user_service.get_user_by_username")
-    def test_raises_user_not_found_when_load_after_create_fails(
+    def test_raises_user_creation_error_when_load_after_create_fails(
         self,
         mock_get_by_name: MagicMock,
         mock_hash: MagicMock,
@@ -140,7 +141,7 @@ class TestRegisterUser(unittest.TestCase):
 
         from data.models import UserCreate
 
-        with self.assertRaises(UserNotFoundError):
+        with self.assertRaises(UserCreationError):
             register_user(UserCreate(username="johndoe", password="SecurePass1!"))
 
 
@@ -210,12 +211,14 @@ class TestRefreshTokenPair(unittest.TestCase):
 
     @patch("services.user_service.get_user_by_id")
     @patch("services.user_service.decode_token")
-    def test_raises_user_not_found_when_user_deleted(self, mock_decode: MagicMock, mock_get: MagicMock) -> None:
+    def test_raises_invalid_refresh_token_when_user_deleted(
+        self, mock_decode: MagicMock, mock_get: MagicMock
+    ) -> None:
         mock_decode.return_value = _refresh_payload()
         mock_get.return_value = None
         from data.models import RefreshRequest
 
-        with self.assertRaises(UserNotFoundError):
+        with self.assertRaises(InvalidRefreshTokenError):
             refresh_token_pair(RefreshRequest(refresh_token="orphaned.token"))
 
     @patch("services.user_service.get_user_by_id")

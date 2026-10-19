@@ -1,6 +1,8 @@
+"""User and authentication endpoints; HTTP failures are mapped centrally."""
+
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from data.models import (
@@ -21,13 +23,6 @@ from services.user_service import (
     register_user,
     update_user_role,
 )
-from utils.errors import (
-    IncorrectOldPasswordError,
-    InvalidCredentialsError,
-    InvalidRefreshTokenError,
-    UsernameAlreadyExistsError,
-    UserNotFoundError,
-)
 
 users_router = APIRouter(prefix="/users", tags=["Authentication"])
 
@@ -37,18 +32,7 @@ users_router = APIRouter(prefix="/users", tags=["Authentication"])
     status_code=status.HTTP_201_CREATED,
 )
 def register(user_data: UserCreate) -> UserPublic:
-    try:
-        return register_user(user_data)
-    except UsernameAlreadyExistsError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(exc),
-        ) from exc
-    except UserNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc),
-        ) from exc
+    return register_user(user_data)
 
 
 @users_router.post(
@@ -56,17 +40,10 @@ def register(user_data: UserCreate) -> UserPublic:
     status_code=status.HTTP_200_OK,
 )
 def login(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]) -> TokenPairResponse:
-    try:
-        return authenticate_user(
-            username=form_data.username,
-            password=form_data.password,
-        )
-    except InvalidCredentialsError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(exc),
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
+    return authenticate_user(
+        username=form_data.username,
+        password=form_data.password,
+    )
 
 
 @users_router.post(
@@ -74,20 +51,7 @@ def login(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]) -> TokenPa
     status_code=status.HTTP_200_OK,
 )
 def refresh(refresh_request: RefreshRequest) -> TokenPairResponse:
-    try:
-        return refresh_token_pair(refresh_request)
-    except InvalidRefreshTokenError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(exc),
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
-    except UserNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(exc),
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
+    return refresh_token_pair(refresh_request)
 
 
 @users_router.post(
@@ -98,13 +62,7 @@ def change_user_password(
     password_data: UserUpdate,
     current_user: Annotated[UserInternal, Depends(get_current_user)],
 ) -> None:
-    try:
-        change_password(current_user, password_data)
-    except IncorrectOldPasswordError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        ) from exc
+    change_password(current_user, password_data)
 
 
 @users_router.get(
@@ -127,10 +85,7 @@ def set_user_role(
     user_id: int,
     role_update: UserRoleUpdate,
 ) -> UserPublic:
-    try:
-        return update_user_role(user_id, role_update.role)
-    except UserNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return update_user_role(user_id, role_update.role)
 
 
 @users_router.post(

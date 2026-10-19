@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
 
 from data.models import SORT_FIELD, SORT_ORDER, MovieCreate, MovieOut, MovieUpdate
 from dependencies.auth import get_current_admin, get_current_user
@@ -14,7 +14,6 @@ from services.movies_service import (
     update_movie_record,
 )
 from services.rating_service import enrich_movie_rating
-from utils.errors import EmptyMovieUpdateError, MovieCreationError, MovieDeleteError, MovieNotFoundError
 
 movies_router = APIRouter(prefix="/movies", tags=["Movies"])
 
@@ -29,22 +28,14 @@ def create_movie_endpoint(
     background_tasks: BackgroundTasks,
 ) -> MovieOut:
     """Create a movie as an admin and schedule its rating lookup."""
-    try:
-        created_movie = create_movie_record(movie_data)
+    created_movie = create_movie_record(movie_data)
 
-        background_tasks.add_task(
-            enrich_movie_rating,
-            created_movie.id,
-            created_movie.title,
-        )
-
-    except MovieCreationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc),
-        ) from exc
-    else:
-        return created_movie
+    background_tasks.add_task(
+        enrich_movie_rating,
+        created_movie.id,
+        created_movie.title,
+    )
+    return created_movie
 
 
 @movies_router.get(
@@ -70,13 +61,7 @@ def get_movie_endpoint(
     movie_id: int,
 ) -> MovieOut:
     """Return a movie for an authenticated user, or report a missing record."""
-    try:
-        return get_movie_record(movie_id)
-    except MovieNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        ) from exc
+    return get_movie_record(movie_id)
 
 
 @movies_router.put(
@@ -89,18 +74,7 @@ def update_movie_endpoint(
     movie_data: MovieUpdate,
 ) -> MovieOut:
     """Apply an admin's movie changes, mapping empty and missing updates to HTTP errors."""
-    try:
-        return update_movie_record(movie_id, movie_data)
-    except EmptyMovieUpdateError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        ) from exc
-    except MovieNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        ) from exc
+    return update_movie_record(movie_id, movie_data)
 
 
 @movies_router.delete(
@@ -112,15 +86,4 @@ def delete_movie_endpoint(
     movie_id: int,
 ) -> None:
     """Delete a movie as an admin and return an empty successful response."""
-    try:
-        delete_movie_record(movie_id)
-    except MovieNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        ) from exc
-    except MovieDeleteError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc),
-        ) from exc
+    delete_movie_record(movie_id)

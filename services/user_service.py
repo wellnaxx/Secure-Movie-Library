@@ -21,6 +21,7 @@ from utils.errors import (
     IncorrectOldPasswordError,
     InvalidCredentialsError,
     InvalidRefreshTokenError,
+    UserCreationError,
     UsernameAlreadyExistsError,
     UserNotFoundError,
 )
@@ -63,7 +64,7 @@ def register_user(user_data: UserCreate) -> UserPublic:
 
     created_user = get_user_by_id(new_user_id)
     if created_user is None:
-        raise UserNotFoundError("User was created, but could not be loaded afterwards.")
+        raise UserCreationError("User was created, but could not be loaded afterwards.")
 
     return UserPublic.model_validate(created_user)
 
@@ -97,7 +98,7 @@ def refresh_token_pair(refresh_request: RefreshRequest) -> TokenPairResponse:
 
     user_data = get_user_by_id(user_id)
     if user_data is None:
-        raise UserNotFoundError("User not found.")
+        raise InvalidRefreshTokenError("User not found.")
 
     user = UserInternal(**user_data)
 

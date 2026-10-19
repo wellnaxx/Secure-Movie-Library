@@ -18,23 +18,39 @@ class UserServiceError(Exception):
 
 
 class UsernameAlreadyExistsError(UserServiceError):
-    pass
+    """Registration conflicts with an existing username."""
 
 
-class InvalidCredentialsError(UserServiceError):
-    pass
+class AuthenticationError(UserServiceError):
+    """Credentials or tokens do not establish a valid authenticated user."""
 
 
-class InvalidRefreshTokenError(UserServiceError):
-    pass
+class InvalidCredentialsError(AuthenticationError):
+    """Login credentials are invalid."""
+
+
+class InvalidAccessTokenError(AuthenticationError):
+    """An access token is invalid, revoked, or belongs to a deleted user."""
+
+
+class InvalidRefreshTokenError(AuthenticationError):
+    """A refresh token is invalid, revoked, or belongs to a deleted user."""
+
+
+class AuthorizationError(UserServiceError):
+    """An authenticated user lacks permission for an operation."""
+
+
+class UserCreationError(UserServiceError):
+    """Registration could not load the user after the insert succeeded."""
 
 
 class UserNotFoundError(UserServiceError):
-    pass
+    """A user targeted by an account-management operation does not exist."""
 
 
 class IncorrectOldPasswordError(UserServiceError):
-    pass
+    """The supplied old password does not match the stored hash."""
 
 
 class MovieServiceError(Exception):

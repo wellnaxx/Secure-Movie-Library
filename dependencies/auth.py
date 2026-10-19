@@ -2,86 +2,62 @@
 FastAPI dependencies for authentication and authorization.
 """
 
-from fastapi import Depends, HTTPException, status
+from typing import Annotated
+
+from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
 
 from auth.jwt_handler import decode_token
 from data.models import UserInternal
 from repositories.user_repository import get_user_by_id
+from utils.errors import AuthorizationError, InvalidAccessTokenError
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/users/login")
 
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    token: Annotated[str, Depends(oauth2_scheme)],
 ) -> UserInternal:
     """
     Validate the JWT access token and return the authenticated user.
 
-    Raises 401 for missing/invalid/expired tokens or deleted users.
-    Raises 403 for inactive/blocked users.
+    Invalid, expired, or revoked tokens and deleted users raise
+    InvalidAccessTokenError, mapped centrally to HTTP 401.
     """
     payload = decode_token(token, expected_type="access")
     if payload is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise InvalidAccessTokenError("Invalid or expired token.")
 
     user_id_str: str | None = payload.get("sub")
     if not user_id_str:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token payload: missing subject (sub) claim.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise InvalidAccessTokenError("Invalid token payload: missing subject (sub) claim.")
 
     try:
         user_id = int(user_id_str)
     except (ValueError, TypeError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token payload: subject must be a valid user ID.",
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
+        raise InvalidAccessTokenError("Invalid token payload: subject must be a valid user ID.") from exc
 
     user_data = get_user_by_id(user_id)
     if user_data is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found. Account may have been deleted.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise InvalidAccessTokenError("User not found. Account may have been deleted.")
 
     user = UserInternal(**user_data)
 
     try:
         token_version = int(payload.get("token_version"))
     except (ValueError, TypeError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token payload: missing or invalid token_version.",
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
+        raise InvalidAccessTokenError("Invalid token payload: missing or invalid token_version.") from exc
 
     if token_version != user.token_version:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token revoked. Please log in again.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise InvalidAccessTokenError("Token revoked. Please log in again.")
 
     return user
 
 
 def get_current_admin(
-    current_user: UserInternal = Depends(get_current_user),
+    current_user: Annotated[UserInternal, Depends(get_current_user)],
 ) -> UserInternal:
-    """Require the caller to have ADMIN role. Raises 403 otherwise."""
+    """Require ADMIN role; AuthorizationError is mapped centrally to HTTP 403."""
     if current_user.role != "ADMIN":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This operation requires administrator privileges.",
-        )
+        raise AuthorizationError("This operation requires administrator privileges.")
     return current_user

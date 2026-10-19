@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from config.database import DBConfig
 from data.models import UserPublic
+from exception_handlers import register_exception_handlers
 from routers.users import users_router
 
 
@@ -24,6 +25,7 @@ class DriverError(Exception):
 class RegistrationRouterTests(unittest.TestCase):
     def setUp(self) -> None:
         app = FastAPI()
+        register_exception_handlers(app)
         app.include_router(users_router)
         self.client = TestClient(app, raise_server_exceptions=False)
         self.addCleanup(self.client.close)
@@ -60,9 +62,14 @@ class RegistrationRouterTests(unittest.TestCase):
         for code, state in ((1452, "23000"), (1048, "23000"), (2002, "HY000")):
             self.connections.side_effect = [self.lookup, self.insert]
             self.insert.cursor.return_value.execute.side_effect = DriverError(code, state)
-            with self.subTest(code=code), self.assertLogs("data.database", level="ERROR"):
+            with (
+                self.subTest(code=code),
+                self.assertLogs("data.database", level="ERROR"),
+                self.assertLogs("exception_handlers", level="ERROR"),
+            ):
                 response = self.client.post("/users/register", json=self.body)
             self.assertEqual(response.status_code, 500)
+            self.assertEqual(response.json(), {"detail": "Database operation failed."})
             self.assertNotIn("private driver details", response.text)
             self.assertNotIn("Username is already taken", response.text)
 

@@ -11,6 +11,7 @@ from auth.jwt_handler import ALGORITHM, JWTPayload, UserTokenData, create_access
 from config.jwt import JWTConfig
 from data.models import MovieOut, UserInternal
 from dependencies.auth import get_current_admin, get_current_user
+from exception_handlers import register_exception_handlers
 from routers.movies import movies_router
 from utils.errors import EmptyMovieUpdateError, MovieCreationError, MovieDeleteError, MovieNotFoundError
 
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
 class MoviesRouterTests(unittest.TestCase):
     def setUp(self) -> None:
         self.app = FastAPI()
+        register_exception_handlers(self.app)
         self.app.include_router(movies_router)
         self.app.dependency_overrides[get_current_user] = self.authorized_user
         self.app.dependency_overrides[get_current_admin] = self.authorized_user
@@ -106,6 +108,7 @@ class MoviesRouterTests(unittest.TestCase):
             with (
                 self.subTest(method=method, error=error),
                 patch(f"routers.movies.{target}", side_effect=error),
+                patch("exception_handlers.logger"),
                 patch("routers.movies.enrich_movie_rating", new_callable=AsyncMock) as enrich,
             ):
                 response = self.client.request(method, url, json={"title": "Example"})
@@ -265,6 +268,7 @@ class MoviesRouterTests(unittest.TestCase):
                 with (
                     self.subTest(method=method, url=url),
                     patch(f"routers.movies.{target}", side_effect=RuntimeError("internal details")),
+                    patch("exception_handlers.logger"),
                     patch("routers.movies.enrich_movie_rating", new_callable=AsyncMock) as enrich,
                 ):
                     response = client.request(method, url, json={"title": "Example"})

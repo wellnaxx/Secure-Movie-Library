@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 
+from exception_handlers import register_exception_handlers
 from middleware.request_logging import RequestLoggingMiddleware
 from routers.movies import movies_router
 from routers.users import users_router
@@ -41,5 +42,6 @@ app = FastAPI(
 )
 
 app.add_middleware(RequestLoggingMiddleware)
+register_exception_handlers(app)
 app.include_router(users_router)
 app.include_router(movies_router)
