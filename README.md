@@ -12,6 +12,7 @@ A FastAPI REST API for a shared movie catalog, with JWT authentication, role-bas
 - Distinguish omitted movie update fields from explicit null values.
 - Validate database rows with Pydantic `TypeAdapter` and `TypedDict` schemas.
 - Distinguish unique-key conflicts from other persistence errors, including racing username registrations.
+- Map application and repository errors centrally to consistent HTTP responses with sanitized server failures.
 - Use parameterized MariaDB queries without an ORM, with connection cleanup and write rollback on failure.
 - Configure application logging to stdout and optional rotating files, with HTTP status and response-time records.
 
@@ -236,7 +237,27 @@ Persistence errors are driver-independent classes defined in `utils/errors.py`:
 
 `DuplicateKeyError` and `DatabaseError` are separate subclasses of `RepositoryError`. The database helpers chain the original driver exception and preserve existing repository errors unchanged. Failed inserts and updates roll back and close their resources. General driver details are logged server-side; translated error messages do not embed them. Duplicate-key conflicts produce a generic debug record rather than an unexpected-failure traceback.
 
-Repositories propagate these errors to services. Registration catches `DuplicateKeyError` from the insert and translates it into `UsernameAlreadyExistsError`, which the users router maps to `409`. The initial username check remains an early rejection; the database unique constraint handles concurrent inserts. Foreign-key, nullability, syntax, and connection errors are not translated into username conflicts.
+Repositories propagate these errors to services. Registration catches `DuplicateKeyError` from the insert and translates it into `UsernameAlreadyExistsError`, which the shared conflict handler maps to `409`. The initial username check remains an early rejection; the database unique constraint handles concurrent inserts. Foreign-key, nullability, syntax, and connection errors are not translated into username conflicts.
+
+## Centralized HTTP exception handling
+
+`exception_handlers.py` owns HTTP error mapping. `main.py` registers it before serving requests; routers call services directly, and authentication dependencies raise typed application errors. When embedding the routers in a separate FastAPI app, call `register_exception_handlers(app)` on that app too.
+
+| Error | HTTP behavior |
+|---|---|
+| `AuthenticationError`, including invalid credentials/access/refresh tokens | `401` with `WWW-Authenticate: Bearer` |
+| `AuthorizationError` | `403` |
+| `UsernameAlreadyExistsError` | `409` with the application's public message |
+| `DuplicateKeyError` | `409` with a generic unique-key conflict message |
+| `MovieNotFoundError`, `UserNotFoundError` | `404` |
+| `EmptyMovieUpdateError`, `IncorrectOldPasswordError` | `400` |
+| `UserCreationError`, `MovieCreationError`, `MovieDeleteError` | `500` with the application-defined public message |
+| Other `RepositoryError` subclasses, including `DatabaseError` | `500`, `{"detail": "Database operation failed."}` |
+| Unexpected exceptions or unclassified service errors | `500`, `{"detail": "Internal server error."}` |
+
+Server failures are logged with explicit traceback information and method/path metadata. Generic repository and unexpected-error responses exclude driver/internal details. FastAPI's built-in `HTTPException` handling and `422` request-validation responses remain intact.
+
+User errors distinguish operation context: a registration reload failure raises `UserCreationError` (`500`), a refresh token belonging to a deleted user raises `InvalidRefreshTokenError` (`401`), and an account-management target that does not exist raises `UserNotFoundError` (`404`). Handlers do not infer these meanings from URL paths.
 
 ## Application and request logging
 
@@ -273,13 +294,13 @@ python -m pyright --pythonpath .venv/Scripts/python.exe
 
 On Linux/macOS, use `.venv/bin/python` for Pyright's interpreter path. Select the same environment in VS Code/Pylance so it can find runtime packages and type stubs. Ruff configuration is stored in `pyproject.toml`; strict Pyright settings are not currently committed there.
 
-The current suite contains **186 tests** covering typed configuration, application/request logging, SQL loading, database helpers, JWT handling, movie/user repositories, movie/user services, OMDb enrichment, and HTTP routes. Typed-error tests cover duplicate classification, unrelated integrity/connection failures, rollback and cleanup, original exception causes, and registration conflicts after a successful pre-check. Logging tests cover startup, level filtering, rotating files, cache lifecycle, request privacy, streaming, and exception handling. SQL-loader tests cover real files, caching, missing/empty files, path validation, working-directory independence, and lazy query groups. Configuration tests cover defaults, validation, immutability, secret-safe representations, cache overrides/resets, and independent loading. Movie-router tests exercise real JWT and role checks while mocking database access. Users-router HTTP tests currently cover registration. Database, repository, and enrichment tests use mocks rather than live MariaDB or OMDb services.
+The current suite contains **204 tests** covering typed configuration, centralized exception handlers, application/request logging, SQL loading, database helpers, JWT handling, movie/user repositories, movie/user services, OMDb enrichment, and HTTP routes. Handler tests cover status mapping, bearer challenges, sanitization, framework validation, contextual user errors, and main-app/request-logging integration. Typed-error tests cover duplicate classification, unrelated integrity/connection failures, rollback and cleanup, original exception causes, and registration conflicts after a successful pre-check. Logging tests cover startup, level filtering, rotating files, cache lifecycle, request privacy, streaming, and exception handling. SQL-loader tests cover real files, caching, missing/empty files, path validation, working-directory independence, and lazy query groups. Configuration tests cover defaults, validation, immutability, secret-safe representations, cache overrides/resets, and independent loading. Movie-router tests exercise real JWT and role checks while mocking database access. Users-router HTTP tests cover registration and failure handling for login, refresh, password changes, role updates, and logout. Database, repository, and enrichment tests use mocks rather than live MariaDB or OMDb services.
 
 For coverage, install the separate optional measurement tool:
 
 ```shell
 python -m pip install coverage
-python -m coverage run --branch --source=auth,config,data,dependencies,middleware,repositories,routers,services,utils -m unittest discover -s tests
+python -m coverage run --branch --source=exception_handlers,auth,config,data,dependencies,middleware,repositories,routers,services,utils -m unittest discover -s tests
 python -m coverage report -m
 ```
 
@@ -289,6 +310,7 @@ Coverage measures exercised code, not every possible input or live database beha
 
 ```text
 ├── main.py                       # FastAPI app, lifespan logging, router registration
+├── exception_handlers.py         # Central HTTP error mapping and sanitized server failures
 ├── pyproject.toml                # Dependencies, development tools, Ruff settings
 ├── requirements.txt              # Pinned runtime installation requirements
 ├── config/
@@ -350,6 +372,7 @@ Coverage measures exercised code, not every possible input or live database beha
 └── tests/
     ├── test_config.py            # Settings validation, defaults, cache lifecycle
     ├── test_database.py          # Cleanup, transactions, result handling
+    ├── test_exception_handlers.py # HTTP mappings, headers, sanitization, app integration
     ├── test_jwt_handler.py       # JWT validation, expiration, settings, caching
     ├── test_logging.py           # Logging settings, levels, handlers, file rotation
     ├── test_movie_repository.py  # Movie queries, sorting, validation, failures
