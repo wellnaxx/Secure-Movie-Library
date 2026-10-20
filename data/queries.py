@@ -12,7 +12,13 @@ from data.loader import load_sql
 
 @dataclass(frozen=True, slots=True)
 class MovieQueries:
-    """Movie statements and templates stored under data/sql/movies."""
+    """Movie statements and templates stored under data/sql/movies.
+
+    list_all accepts where_clause/order_clause; order_by accepts column/direction;
+    order_by_rating accepts direction; update accepts assignments; and
+    update_assignment accepts column. These slots are trusted SQL structure,
+    never bound user values. See data/sql/README.md for parameter order.
+    """
 
     create: str
     get_by_id: str
@@ -28,7 +34,11 @@ class MovieQueries:
 
 @dataclass(frozen=True, slots=True)
 class UserQueries:
-    """User statements stored under data/sql/users."""
+    """User statements stored under data/sql/users, with positional ? bindings.
+
+    All statements are complete SQL without string-format template slots.
+    See data/sql/README.md for each statement's parameter order.
+    """
 
     create: str
     get_by_username: str
