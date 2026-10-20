@@ -10,7 +10,12 @@ from utils.env_vars import get_env_var
 
 @dataclass(frozen=True, slots=True)
 class DBConfig:
-    """MariaDB connection settings; an empty password is allowed."""
+    """MariaDB connection identity, TCP port, and timeout in seconds.
+
+    Host, database name, and username must be nonblank; password may be empty and
+    is excluded from repr. Port is 1-65535 and connect_timeout must be positive.
+    Values are validated without trimming the credentials passed to the driver.
+    """
 
     host: str
     name: str
