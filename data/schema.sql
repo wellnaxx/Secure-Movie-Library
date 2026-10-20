@@ -1,4 +1,7 @@
 -- MySQL Workbench Forward Engineering
+-- Bootstrap movie_library; CREATE TABLE IF NOT EXISTS does not migrate tables.
+-- Users and the shared movie catalog are independent: there is no ownership FK.
+-- Application request schemas enforce stricter username and movie-year rules.
 
 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0;
 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0;

@@ -1,3 +1,6 @@
+-- Development reset: run after schema.sql against a disposable movie_library.
+-- Truncates both tables, resets their IDs, and inserts only the admin account.
+-- The movie catalog is intentionally empty; admin password is SecurePass123!.
 USE movie_library;
 
 -- ------------------------------------
