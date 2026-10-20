@@ -12,7 +12,9 @@ def load_sql(relative_path: str) -> str:
 
     Paths must stay inside the SQL directory and identify a .sql file. Missing
     files raise FileNotFoundError; invalid paths and empty files raise ValueError.
-    Call load_sql.cache_clear() to reload files after editing them in a process.
+    Reads strip surrounding whitespace but retain SQL comments and placeholders.
+    Failed reads are not cached. Clearing load_sql.cache_clear() does not replace
+    query groups already cached by QueryRegistry; restart to reload both layers.
     """
     path = (SQL_DIR / relative_path).resolve()
     if not path.is_relative_to(SQL_DIR.resolve()) or path.suffix != ".sql":
