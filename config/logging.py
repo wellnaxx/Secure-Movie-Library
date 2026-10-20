@@ -20,7 +20,11 @@ LOG_LEVELS = {
 
 @dataclass(frozen=True, slots=True)
 class LoggingConfig:
-    """Minimum severity and optional rotating-file destination."""
+    """Standard logging severity and optional rotating-file destination.
+
+    None means stdout only. Relative paths use the process working directory;
+    destination creation and permissions are checked when logging is configured.
+    """
 
     level: int = logging.INFO
     log_file: Path | None = None
