@@ -10,6 +10,13 @@ read_query(sql, params)     -> list[dict]
 read_query_one(sql, params) -> dict | None
 insert_query(sql, params)   -> int   (last inserted row id)
 write_query(sql, params)    -> int   (affected row count)
+
+Each helper opens its own connection and closes its resources. Insert and write
+helpers commit independently and attempt rollback on failure; these calls cannot
+be composed into a shared transaction. Values belong in sql_params using MariaDB
+question-mark placeholders, never in string-formatted SQL. Driver failures are
+translated to RepositoryError subclasses with the original exception chained.
+Rollback and resource-close errors may propagate directly from cleanup.
 """
 
 from __future__ import annotations
@@ -35,33 +42,55 @@ class Cursor(Protocol):
     """Database cursor operations used by this module."""
 
     @property
-    def description(self) -> Sequence[tuple[str, *tuple[Any, ...]]] | None: ...
+    def description(self) -> Sequence[tuple[str, *tuple[Any, ...]]] | None:
+        """Return result-column metadata, or None when no result set exists."""
+        ...
 
     @property
-    def lastrowid(self) -> int | None: ...
+    def lastrowid(self) -> int | None:
+        """Return the generated insert ID, or None when unavailable."""
+        ...
 
     @property
-    def rowcount(self) -> int: ...
+    def rowcount(self) -> int:
+        """Return the driver's affected-row count for the last statement."""
+        ...
 
-    def execute(self, statement: str, data: tuple[Any, ...] = ()) -> None: ...
+    def execute(self, statement: str, data: tuple[Any, ...] = ()) -> None:
+        """Execute SQL with data bound separately in placeholder order."""
+        ...
 
-    def fetchall(self) -> Sequence[Sequence[Any]]: ...
+    def fetchall(self) -> Sequence[Sequence[Any]]:
+        """Return all remaining rows as ordered column-value sequences."""
+        ...
 
-    def fetchone(self) -> Sequence[Any] | None: ...
+    def fetchone(self) -> Sequence[Any] | None:
+        """Return the next row, or None when the result set is exhausted."""
+        ...
 
-    def close(self) -> None: ...
+    def close(self) -> None:
+        """Release the cursor and its driver resources."""
+        ...
 
 
 class Connection(Protocol):
     """Database connection operations used by this module."""
 
-    def cursor(self) -> Cursor: ...
+    def cursor(self) -> Cursor:
+        """Create a cursor for statements on this connection."""
+        ...
 
-    def commit(self) -> None: ...
+    def commit(self) -> None:
+        """Commit pending writes on this connection."""
+        ...
 
-    def rollback(self) -> None: ...
+    def rollback(self) -> None:
+        """Roll back pending writes on this connection."""
+        ...
 
-    def close(self) -> None: ...
+    def close(self) -> None:
+        """Release the connection and its driver resources."""
+        ...
 
 
 def _get_connection(config: DBConfig) -> Connection:
@@ -131,7 +160,12 @@ def _raise_repository_error(exc: Exception, operation: str) -> NoReturn:
 
 
 def read_query(sql: str, sql_params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
-    """Execute a SELECT and return all rows as dicts."""
+    """Execute parameterized SQL and return all rows keyed by column name.
+
+    Empty results return []. Missing column metadata or mismatched row lengths
+    become DatabaseError. No schema conversion is performed; repositories own
+    row validation. The cursor and connection are closed after the read.
+    """
     logger.debug("SELECT %s", sql)
     conn = None
     cursor = None
@@ -150,7 +184,11 @@ def read_query(sql: str, sql_params: tuple[Any, ...] = ()) -> list[dict[str, Any
 
 
 def read_query_one(sql: str, sql_params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
-    """Execute a SELECT and return the first row as a dict, or None."""
+    """Execute parameterized SQL and return the first named row, or None.
+
+    Uses fetchone rather than loading every match. Column names come from cursor
+    metadata; values retain their driver types. Resources close after the read.
+    """
     logger.debug("SELECT (one) %s", sql)
     conn = None
     cursor = None
@@ -173,8 +211,10 @@ def read_query_one(sql: str, sql_params: tuple[Any, ...] = ()) -> dict[str, Any]
 def insert_query(sql: str, sql_params: tuple[Any, ...] = ()) -> int:
     """Insert a row, raising DuplicateKeyError for unique-key conflicts.
 
-    Other failures raise DatabaseError. Failed writes are rolled back and their
-    cursor and connection are closed before control returns to the caller.
+    Return the generated row ID after a successful commit; a missing ID is a
+    DatabaseError and prevents commit. Other operation failures become
+    DatabaseError. Rollback and cleanup are attempted before returning control;
+    errors raised by rollback or close may supersede the operation failure.
     """
     logger.debug("INSERT %s", sql)
     conn = None
@@ -201,8 +241,9 @@ def insert_query(sql: str, sql_params: tuple[Any, ...] = ()) -> int:
 def write_query(sql: str, sql_params: tuple[Any, ...] = ()) -> int:
     """Update/delete rows, raising DuplicateKeyError for unique-key conflicts.
 
-    Other failures raise DatabaseError. Failed writes are rolled back and their
-    cursor and connection are closed before control returns to the caller.
+    Return the driver's affected-row count after commit, including zero for an
+    unmatched write. Other operation failures become DatabaseError. Rollback and
+    cleanup are attempted on failure; rollback/close errors can propagate directly.
     """
     logger.debug("WRITE %s", sql)
     conn = None
