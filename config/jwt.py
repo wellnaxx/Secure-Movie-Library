@@ -10,7 +10,12 @@ from utils.env_vars import get_env_var
 
 @dataclass(frozen=True, slots=True)
 class JWTConfig:
-    """Signing secret and token lifetimes; HS256 remains fixed in the handler."""
+    """Shared signing secret and positive access-minute/refresh-day lifetimes.
+
+    Defaults are 30 minutes and seven days; HS256 is fixed in the JWT handler.
+    The secret is excluded from repr and must contain at least 32 characters
+    after stripping surrounding whitespace for the length check only.
+    """
 
     secret_key: str = field(repr=False)
     access_token_expire_minutes: int = 30
