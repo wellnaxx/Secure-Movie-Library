@@ -1,8 +1,10 @@
 """
 JWT Token Handler - JSON Web Token operations for authentication.
 
-This module handles creation and validation of JWT tokens for user authentication.
-Implements RFC 7519 standard claims for security and interoperability.
+Signs HS256 access and refresh tokens using the shared configured secret. Decode
+checks signatures, expiration, expected token type, and the typed claim shape.
+Account existence, current role, and token-version revocation are checked against
+the database by authentication dependencies and the refresh service, not here.
 """
 
 import uuid
@@ -18,7 +20,11 @@ ALGORITHM = "HS256"
 
 
 class UserTokenData(TypedDict):
-    """User information required to issue access and refresh tokens."""
+    """Identity and current database token version required to issue a token.
+
+    Password hashes are never included. role is copied into the signed token,
+    while authorization still reloads the user's current database role.
+    """
 
     user_id: int
     username: str
@@ -27,7 +33,12 @@ class UserTokenData(TypedDict):
 
 
 class JWTPayload(TypedDict):
-    """JWT claims; encoding converts datetime values to Unix timestamps."""
+    """Required signed claims, including token purpose and revocation version.
+
+    sub contains the user ID as text; jti is a UUID token identifier. Encoding
+    converts UTC datetime values for iat/exp into Unix timestamps. Successful
+    decoding validates every field without coercion before returning this shape.
+    """
 
     sub: str
     iat: datetime | int
@@ -56,6 +67,7 @@ def create_token(data: UserTokenData, token_type: Literal["access", "refresh"] =
     - type: "access" or "refresh" to prevent token confusion
     - username: User's username
     - role: User's role (USER or ADMIN)
+    - token_version: Database version used to revoke previously issued tokens
 
     Args:
         data: Dictionary containing user information.
@@ -66,13 +78,17 @@ def create_token(data: UserTokenData, token_type: Literal["access", "refresh"] =
         str: Encoded JWT token
 
     Raises:
-        ValueError: If user_id is missing from data
+        ValueError: If user_id, username, or role is empty, or token_version
+            cannot be converted to an integer.
+        KeyError: If token_version is missing from a runtime dictionary.
+        OSError: If a required environment setting is unavailable.
+        RuntimeError: If the configured signing secret is too short.
 
     Example:
-        >>> token_data = {"user_id": 123, "username": "johndoe", "role": "USER"}
+        >>> token_data: UserTokenData = {
+        ...     "user_id": 123, "username": "johndoe", "role": "USER", "token_version": 0
+        ... }
         >>> token = create_token(token_data)
-        >>> print(token)
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
     """
     user_id = data.get("user_id")
     username = data.get("username")
@@ -113,7 +129,7 @@ def decode_token(token: str, expected_type: Literal["access", "refresh"] = "acce
     Decode and verify a JWT token.
 
     Validates:
-    - Token signature (using SECRET_KEY)
+    - Token signature (using the configured JWT_SECRET_KEY and HS256)
     - Token expiration (exp claim)
     - Token type matches expected type
     - Required payload claims have the expected types
@@ -123,7 +139,7 @@ def decode_token(token: str, expected_type: Literal["access", "refresh"] = "acce
         expected_type: Expected token type ("access" or "refresh")
 
     Returns:
-        dict: Token payload if valid, containing:
+        JWTPayload: Token payload if valid, containing:
               - sub: User ID (as string)
               - iat: Issued at timestamp
               - exp: Expiration timestamp
@@ -131,15 +147,11 @@ def decode_token(token: str, expected_type: Literal["access", "refresh"] = "acce
               - type: Token type
               - username: User's username
               - role: User's role
+              - token_version: Account revocation version at issuance
         None: If token is invalid, expired, malformed, or wrong type
 
-    Example:
-        >>> payload = decode_token(access_token, expected_type="access")
-        >>> if payload:
-        ...     user_id = int(payload["sub"])
-        ...     print(f"Valid token for user {user_id}")
-        ... else:
-        ...     print("Invalid or expired token")
+    Configuration failures propagate rather than being reported as invalid
+    tokens. This function does not check account existence or revocation state.
     """
     config = get_jwt_config()
     try:
@@ -173,13 +185,10 @@ def create_refresh_token(user_data: UserTokenData) -> str:
     """
     Create a refresh token (long-lived).
 
-    Refresh tokens are used to obtain new access tokens without re-authentication.
-    They have much longer expiration (typically 7-30 days).
-
-    Security Note:
-    - Store refresh token hash in database for revocation
-    - Implement token rotation on refresh
-    - Add revocation mechanism
+    Lifetime comes from JWTConfig.refresh_token_expire_days (seven by default).
+    Refresh tokens share the access-token signing key and carry type="refresh".
+    Revocation compares token_version with the current account; individual token
+    hashes are not stored and renewal does not rotate or revoke the old token.
 
     Args:
         user_data: Dict with user_id, username, role, token_version
