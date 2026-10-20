@@ -69,7 +69,7 @@ class UserCreate(UserBase):
     Schema for user registration.
     
     All fields are required. Password must meet complexity requirements:
-    - At least 8 characters
+    - Between 8 and 64 characters
     - Contains uppercase letter
     - Contains lowercase letter  
     - Contains digit
@@ -117,7 +117,10 @@ class UserUpdate(BaseModel):
     
 class UserPublic(UserBase):
     """
-    Public user profile visible to all users.
+    Public profile returned by registration, self-profile, and role updates.
+
+    Password hashes and token versions are omitted. This schema does not grant
+    access; authentication and authorization are enforced by route dependencies.
     """
 
     id: int
