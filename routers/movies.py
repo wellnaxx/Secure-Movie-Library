@@ -27,7 +27,12 @@ def create_movie_endpoint(
     movie_data: MovieCreate,
     background_tasks: BackgroundTasks,
 ) -> MovieOut:
-    """Create a movie as an admin and schedule its rating lookup."""
+    """Create a movie as an admin and return HTTP 201 before enrichment.
+
+    Schedule an in-process OMDb task only after the service returns the record.
+    The response normally starts with pending enrichment; later reads show the
+    persisted result. Background failure does not undo movie creation.
+    """
     created_movie = create_movie_record(movie_data)
 
     background_tasks.add_task(
@@ -48,7 +53,12 @@ def list_movies_endpoint(
     sort_by: SORT_FIELD = "rating",
     order: SORT_ORDER = "desc",
 ) -> list[MovieOut]:
-    """List movies for an authenticated user with validated filter and sort options."""
+    """List the shared catalog with a title filter and validated sort options.
+
+    q is a SQL LIKE substring filter; rating/descending is the default sort and
+    NULL ratings sort last. Invalid sort options produce HTTP 422. No pagination
+    or account-specific ownership filter is applied.
+    """
     return list_movie_records(q=q, sort_by=sort_by, order=order)
 
 
@@ -73,7 +83,12 @@ def update_movie_endpoint(
     movie_id: int,
     movie_data: MovieUpdate,
 ) -> MovieOut:
-    """Apply an admin's movie changes, mapping empty and missing updates to HTTP errors."""
+    """Apply supplied fields as an admin, preserving omitted fields despite PUT.
+
+    Explicit null clears director/release_year; a null title produces HTTP 422.
+    Central handlers map empty updates to HTTP 400 and missing records to 404.
+    Changing a title does not schedule a new rating lookup.
+    """
     return update_movie_record(movie_id, movie_data)
 
 
