@@ -1,3 +1,5 @@
+"""Database-helper contracts using mocked cursors and connections, without a live server."""
+
 import unittest
 from unittest.mock import Mock, patch
 
@@ -9,13 +11,17 @@ class DriverError(Exception):
     """MariaDB-style error metadata without requiring the native driver in tests."""
 
     def __init__(self, errno: int | None, sqlstate: str | None, message: str = "driver details") -> None:
+        """Attach driver error metadata while retaining a private diagnostic message."""
         super().__init__(message)
         self.errno = errno
         self.sqlstate = sqlstate
 
 
 class DatabaseTests(unittest.TestCase):
+    """Verify query results, commits, rollback, cleanup, and typed error translation."""
+
     def setUp(self) -> None:
+        """Provide driver-spec mocks and register cleanup for every connection/config patch."""
         self.cursor = Mock(spec=database.Cursor)
         self.connection = Mock(spec=database.Connection)
         self.connection.cursor.return_value = self.cursor

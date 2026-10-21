@@ -1,3 +1,5 @@
+"""OMDb rating parsing, mocked async HTTP requests, and best-effort persistence."""
+
 # Unit tests intentionally exercise private parsing and HTTP helpers.
 # pyright: reportPrivateUsage=false
 
@@ -14,6 +16,8 @@ from services.rating_service import (
 
 
 class TestParseOmdbRating(unittest.TestCase):
+    """Validate numeric rating boundaries and absent or unusable external values."""
+
     def test_returns_float_for_valid_rating(self) -> None:
         self.assertEqual(_parse_omdb_rating({"imdbRating": "8.8"}), 8.8)
 
@@ -62,6 +66,7 @@ def _make_async_client(mock_response: MagicMock) -> MagicMock:
 
 
 def _mock_config() -> AbstractContextManager[MagicMock]:
+    """Patch a typed OMDb config so HTTP tests need no real environment or API key."""
     return patch(
         "services.rating_service.get_omdb_config",
         return_value=OMDbConfig(api_key="testkey"),
@@ -69,6 +74,8 @@ def _mock_config() -> AbstractContextManager[MagicMock]:
 
 
 class TestFetchRatingFromOmdb(unittest.IsolatedAsyncioTestCase):
+    """Verify OMDb request configuration and expected HTTP/API failure results."""
+
     async def test_http_request_uses_typed_configuration(self) -> None:
         response = MagicMock()
         response.json.return_value = {"Response": "True", "imdbRating": "8.8"}
@@ -166,6 +173,8 @@ class TestFetchRatingFromOmdb(unittest.IsolatedAsyncioTestCase):
 
 
 class TestEnrichMovieRating(unittest.IsolatedAsyncioTestCase):
+    """Verify enrichment persistence without propagating background write failures."""
+
     @patch("services.rating_service.update_movie_rating")
     @patch("services.rating_service._fetch_rating_from_omdb", new_callable=AsyncMock)
     async def test_persists_rating_on_success(self, mock_fetch: AsyncMock, mock_update: MagicMock) -> None:

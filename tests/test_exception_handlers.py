@@ -35,7 +35,10 @@ from utils.errors import (
 
 
 class ExceptionHandlerTests(unittest.TestCase):
+    """Exercise registered handlers through an isolated FastAPI application."""
+
     def setUp(self) -> None:
+        """Build failure and validation routes with shared handlers and a non-raising client."""
         self.error: Exception = RuntimeError("private details")
         self.app = FastAPI()
         register_exception_handlers(self.app)
@@ -46,14 +49,17 @@ class ExceptionHandlerTests(unittest.TestCase):
         self.addCleanup(self.client.close)
 
     def failure(self) -> None:
+        """Raise the selected exception from an HTTP endpoint so registered handlers process it."""
         raise self.error
 
     @staticmethod
     def validated(item_id: int) -> dict[str, int]:
+        """Return a typed path value to exercise the framework validation handler."""
         return {"id": item_id}
 
     @staticmethod
     def http_error() -> None:
+        """Raise a framework HTTPException with an existing bearer challenge."""
         raise HTTPException(
             status_code=401, detail="Existing HTTP error", headers={"WWW-Authenticate": "Bearer"}
         )
@@ -154,7 +160,10 @@ class ExceptionHandlerTests(unittest.TestCase):
 
 
 class UserFailureContextTests(unittest.TestCase):
+    """Keep user-operation error meanings consistent through real service calls."""
+
     def setUp(self) -> None:
+        """Mount user routes with shared handlers and a fixed authenticated admin."""
         app = FastAPI()
         register_exception_handlers(app)
         app.include_router(users_router)
@@ -166,6 +175,7 @@ class UserFailureContextTests(unittest.TestCase):
 
     @staticmethod
     def admin() -> UserInternal:
+        """Supply a fixed internal admin account without consulting authentication or persistence."""
         return UserInternal(
             id=1, username="admin", password_hash="hash", role="ADMIN", created_at=datetime(2026, 1, 1)
         )
@@ -248,6 +258,8 @@ class UserFailureContextTests(unittest.TestCase):
 
 
 class MainApplicationHandlerTests(unittest.TestCase):
+    """Verify main-app handler registration and request-logging interaction."""
+
     def test_main_app_handles_repository_failures_and_logs_completed_status(self) -> None:
         with (
             patch("main.configure_logging"),

@@ -1,3 +1,5 @@
+"""User SQL bindings, strict database-row validation, and persistence failure contracts."""
+
 import unittest
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -21,7 +23,10 @@ if TYPE_CHECKING:
 
 
 class UserRepositoryTests(unittest.TestCase):
+    """Check validated user rows and bound persistence operations with database mocks."""
+
     def setUp(self) -> None:
+        """Build a complete typed user row for lookup and mutation-binding assertions."""
         self.row: UserRow = {
             "id": 1,
             "username": "testuser",

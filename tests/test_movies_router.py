@@ -1,3 +1,5 @@
+"""Movie HTTP contracts, validation, authorization, and in-process enrichment behavior."""
+
 import unittest
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Literal
@@ -20,7 +22,10 @@ if TYPE_CHECKING:
 
 
 class MoviesRouterTests(unittest.TestCase):
+    """Exercise movie routes with isolated dependencies and selected real JWT checks."""
+
     def setUp(self) -> None:
+        """Mount movie routes with shared handlers, admin overrides, and a pending movie fixture."""
         self.app = FastAPI()
         register_exception_handlers(self.app)
         self.app.include_router(movies_router)
@@ -37,6 +42,7 @@ class MoviesRouterTests(unittest.TestCase):
 
     @staticmethod
     def authorized_user() -> UserInternal:
+        """Supply an internal admin account for isolated route dependency overrides."""
         return UserInternal(
             id=1,
             username="admin",
@@ -47,10 +53,12 @@ class MoviesRouterTests(unittest.TestCase):
 
     @staticmethod
     def forbidden() -> UserInternal:
+        """Simulate a dependency denying admin permission before the endpoint runs."""
         raise HTTPException(status_code=403, detail="Admin required")
 
     @staticmethod
     def unauthorized() -> UserInternal:
+        """Simulate a dependency rejecting an unauthenticated request."""
         raise HTTPException(status_code=401, detail="Authentication required")
 
     def test_create_returns_201_and_runs_background_enrichment(self) -> None:

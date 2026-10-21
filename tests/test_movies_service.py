@@ -1,3 +1,5 @@
+"""Movie business rules and response models with repository boundaries mocked."""
+
 import unittest
 from datetime import datetime
 from typing import Any
@@ -23,6 +25,7 @@ from utils.errors import (
 
 
 def _movie_dict(**overrides: Any) -> dict[str, Any]:
+    """Build a fresh representative movie row with caller-selected field overrides."""
     base = {
         "id": 1,
         "title": "Inception",
@@ -46,6 +49,8 @@ def _movie_update(**fields: Any) -> MagicMock:
 
 
 class TestCreateMovieRecord(unittest.TestCase):
+    """Verify movie creation, reload, and missing-after-insert failure handling."""
+
     @patch("services.movies_service.get_movie")
     @patch("services.movies_service.create_movie")
     def test_returns_movie_out_on_success(self, mock_create: MagicMock, mock_get: MagicMock) -> None:
@@ -78,6 +83,8 @@ class TestCreateMovieRecord(unittest.TestCase):
 
 
 class TestGetMovieRecord(unittest.TestCase):
+    """Verify conversion of found movies and typed errors for absent records."""
+
     @patch("services.movies_service.get_movie")
     def test_returns_movie_out_when_found(self, mock_get: MagicMock) -> None:
         mock_get.return_value = _movie_dict()
@@ -93,6 +100,8 @@ class TestGetMovieRecord(unittest.TestCase):
 
 
 class TestListMovieRecords(unittest.TestCase):
+    """Verify list conversion and forwarding of repository filter/sort options."""
+
     @patch("services.movies_service.list_movies")
     def test_returns_list_of_movie_out(self, mock_list: MagicMock) -> None:
         mock_list.return_value = [_movie_dict(), _movie_dict(id=2, title="The Matrix")]
@@ -114,6 +123,8 @@ class TestListMovieRecords(unittest.TestCase):
 
 
 class TestUpdateMovieRecord(unittest.TestCase):
+    """Verify partial updates, explicit NULL, empty bodies, and missing records."""
+
     @patch("services.movies_service.get_movie")
     @patch("services.movies_service.update_movie")
     def test_updates_title_successfully(self, mock_update: MagicMock, mock_get: MagicMock) -> None:
@@ -188,6 +199,8 @@ class TestUpdateMovieRecord(unittest.TestCase):
 
 
 class TestDeleteMovieRecord(unittest.TestCase):
+    """Verify successful deletion and failures before or during the delete write."""
+
     @patch("services.movies_service.delete_movie")
     @patch("services.movies_service.get_movie")
     def test_deletes_successfully(self, mock_get: MagicMock, mock_delete: MagicMock) -> None:

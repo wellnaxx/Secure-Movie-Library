@@ -15,7 +15,10 @@ if TYPE_CHECKING:
 
 
 class ConfigurationTests(unittest.TestCase):
+    """Validate immutable settings and independent environment-backed cache lifecycles."""
+
     def setUp(self) -> None:
+        """Isolate required environment values, disable dotenv reads, and reset caches."""
         environment = patch.dict(
             os.environ,
             {

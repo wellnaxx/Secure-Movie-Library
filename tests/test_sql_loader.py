@@ -12,7 +12,10 @@ from data.queries import MovieQueries, QueryRegistry, UserQueries
 
 
 class SQLLoaderTests(unittest.TestCase):
+    """Read real temporary SQL files to verify loader paths, content, and caching."""
+
     def setUp(self) -> None:
+        """Redirect the loader to an isolated temporary directory and reset its cache on cleanup."""
         directory = TemporaryDirectory(prefix=".tmp_sql_", dir=Path.cwd())
         self.root = Path(directory.name).resolve()
         self.addCleanup(directory.cleanup)
@@ -69,6 +72,8 @@ class SQLLoaderTests(unittest.TestCase):
 
 
 class QueryRegistryTests(unittest.TestCase):
+    """Verify lazy independent query groups, immutability, and file registration."""
+
     def test_construction_does_not_read_sql_files(self) -> None:
         with patch("data.queries.load_sql") as loader:
             QueryRegistry()

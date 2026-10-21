@@ -1,3 +1,5 @@
+"""Local JWT signing/decoding, typed claims, expiration, and configuration lifecycle."""
+
 import os
 import unittest
 from datetime import UTC, datetime, timedelta
@@ -22,7 +24,10 @@ if TYPE_CHECKING:
 
 
 class JWTHandlerTests(unittest.TestCase):
+    """Sign real local tokens and check decoding against typed claim requirements."""
+
     def setUp(self) -> None:
+        """Install a disposable signing config and valid identity/claim fixtures per test."""
         self.secret = "test-secret-for-jwt-validation-at-least-32-characters"
         config_patch = patch("auth.jwt_handler.get_jwt_config", return_value=JWTConfig(secret_key=self.secret))
         config_patch.start()
@@ -139,7 +144,10 @@ class JWTHandlerTests(unittest.TestCase):
 
 
 class JWTConfigurationTests(unittest.TestCase):
+    """Verify lazy settings, independent loading, and configured token lifetimes."""
+
     def setUp(self) -> None:
+        """Isolate JWT environment values and reset cached settings before and after tests."""
         self.secret = "s" * 32
         self.user: UserTokenData = {
             "user_id": 1,

@@ -1,3 +1,5 @@
+"""Movie SQL bindings, strict row validation, sorting, updates, and failure propagation."""
+
 import unittest
 from datetime import datetime
 from decimal import Decimal
@@ -24,7 +26,10 @@ if TYPE_CHECKING:
 
 
 class MovieRepositoryTests(unittest.TestCase):
+    """Check strict movie-row contracts and SQL/value separation using database mocks."""
+
     def setUp(self) -> None:
+        """Build a complete typed movie row with a representative MariaDB Decimal rating."""
         self.row: MovieRow = {
             "id": 1,
             "title": "Example",

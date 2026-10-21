@@ -19,7 +19,10 @@ if TYPE_CHECKING:
 
 
 class RequestLoggingTests(unittest.TestCase):
+    """Exercise ASGI status/timing records, privacy, streaming, and failure paths."""
+
     def setUp(self) -> None:
+        """Build routes for success, validation, streaming, denial, and background failures."""
         self.app = FastAPI()
         self.app.add_middleware(RequestLoggingMiddleware)
         self.app.add_api_route("/ok", self.success, methods=["GET", "POST"])
@@ -33,23 +36,29 @@ class RequestLoggingTests(unittest.TestCase):
 
     @staticmethod
     def success() -> dict[str, bool]:
+        """Return a fixed body for successful GET/POST request-log assertions."""
         return {"ok": True}
 
     @staticmethod
     def item(item_id: int) -> dict[str, int]:
+        """Echo a validated path parameter for framework-error logging assertions."""
         return {"id": item_id}
 
     @staticmethod
     def denied() -> None:
+        """Raise a handled authentication error whose delivered status should be logged."""
         raise HTTPException(status_code=401, detail="Authentication required")
 
     @staticmethod
     def error() -> None:
+        """Raise an unexpected exception for request and background failure scenarios."""
         raise RuntimeError("unexpected failure")
 
     @staticmethod
     async def stream() -> StreamingResponse:
+        """Return multiple body chunks to verify transparent streaming and one completion record."""
         async def chunks() -> AsyncIterator[bytes]:
+            """Yield two body chunks without buffering them into a single response."""
             yield b"first"
             yield b"second"
 
@@ -57,6 +66,7 @@ class RequestLoggingTests(unittest.TestCase):
 
     @staticmethod
     def background_error() -> JSONResponse:
+        """Deliver HTTP 201 before a background task raises an unexpected failure."""
         return JSONResponse(
             {"created": True}, status_code=201, background=BackgroundTask(RequestLoggingTests.error)
         )
@@ -139,6 +149,8 @@ class RequestLoggingTests(unittest.TestCase):
 
 
 class NonHTTPRequestLoggingTests(unittest.IsolatedAsyncioTestCase):
+    """Verify that non-HTTP traffic passes through without request records."""
+
     async def test_non_http_scopes_pass_through_without_logging(self) -> None:
         for kind in ("lifespan", "websocket"):
             app = AsyncMock()
@@ -152,6 +164,8 @@ class NonHTTPRequestLoggingTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ApplicationLoggingTests(unittest.TestCase):
+    """Verify lifespan setup and request logging in the assembled application."""
+
     def test_logging_is_configured_once_per_startup_and_main_app_logs_requests(self) -> None:
         with (
             patch("main.configure_logging") as configure,

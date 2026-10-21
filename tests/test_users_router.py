@@ -17,13 +17,17 @@ class DriverError(Exception):
     """MariaDB-style errors for end-to-end registration failure tests."""
 
     def __init__(self, errno: int, sqlstate: str) -> None:
+        """Attach driver error metadata while retaining a private diagnostic message."""
         super().__init__("private driver details and duplicate value")
         self.errno = errno
         self.sqlstate = sqlstate
 
 
 class RegistrationRouterTests(unittest.TestCase):
+    """Verify HTTP registration through real error translation with mocked drivers."""
+
     def setUp(self) -> None:
+        """Mount registration with mocked lookup/insert connections and deterministic hashing."""
         app = FastAPI()
         register_exception_handlers(app)
         app.include_router(users_router)

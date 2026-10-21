@@ -1,3 +1,5 @@
+"""Account and token business rules using mocked hashing and persistence boundaries."""
+
 import unittest
 from datetime import datetime
 from typing import Any
@@ -28,6 +30,7 @@ from utils.errors import (
 
 
 def _user_dict(**overrides: Any) -> dict[str, Any]:
+    """Build a fresh representative internal user row with caller-selected overrides."""
     base = {
         "id": 1,
         "username": "johndoe",
@@ -41,12 +44,14 @@ def _user_dict(**overrides: Any) -> dict[str, Any]:
 
 
 def _internal_user(**overrides: Any) -> UserInternal:
+    """Validate an overridden user-row fixture as an internal service model."""
     from data.models import UserInternal
 
     return UserInternal(**_user_dict(**overrides))
 
 
 def _refresh_payload(**overrides: Any) -> dict[str, Any]:
+    """Build a decoded-refresh fixture for service checks, without exercising JWT decoding."""
     base = {
         "sub": "1",
         "type": "refresh",
@@ -59,6 +64,8 @@ def _refresh_payload(**overrides: Any) -> dict[str, Any]:
 
 
 class TestRegisterUser(unittest.TestCase):
+    """Verify registration, public profiles, pre-check conflicts, and insert races."""
+
     def test_concurrent_duplicate_insert_is_translated_to_username_conflict(self) -> None:
         from data.models import UserCreate
 
@@ -146,6 +153,8 @@ class TestRegisterUser(unittest.TestCase):
 
 
 class TestAuthenticateUser(unittest.TestCase):
+    """Verify credential rejection and token issuance without real password hashing."""
+
     @patch("services.user_service.create_refresh_token")
     @patch("services.user_service.create_access_token")
     @patch("services.user_service.verify_password")
@@ -182,6 +191,8 @@ class TestAuthenticateUser(unittest.TestCase):
 
 
 class TestRefreshTokenPair(unittest.TestCase):
+    """Verify refresh renewal against decoded claims and current account versions."""
+
     @patch("services.user_service.create_refresh_token")
     @patch("services.user_service.create_access_token")
     @patch("services.user_service.get_user_by_id")
@@ -243,6 +254,8 @@ class TestRefreshTokenPair(unittest.TestCase):
 
 
 class TestChangePassword(unittest.TestCase):
+    """Verify old-password checks and the ordered password/version repository calls."""
+
     @patch("services.user_service.bump_token_version")
     @patch("services.user_service.update_password")
     @patch("services.user_service.hash_password")
@@ -271,6 +284,8 @@ class TestChangePassword(unittest.TestCase):
 
 
 class TestUpdateUserRole(unittest.TestCase):
+    """Verify role writes, reloaded public profiles, and missing-user failures."""
+
     @patch("services.user_service.get_user_by_id")
     @patch("services.user_service.update_role")
     def test_promotes_user_to_admin(self, mock_update_role: MagicMock, mock_get: MagicMock) -> None:

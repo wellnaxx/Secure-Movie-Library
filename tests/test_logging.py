@@ -15,7 +15,10 @@ from utils.logging_config import configure_logging
 
 
 class LoggingConfigurationTests(unittest.TestCase):
+    """Validate logging settings without reading the developer environment."""
+
     def setUp(self) -> None:
+        """Disable dotenv reads, clear environment settings, and reset the logging cache."""
         environment = patch.dict(os.environ, {}, clear=True)
         environment.start()
         self.addCleanup(environment.stop)
@@ -84,7 +87,10 @@ class LoggingConfigurationTests(unittest.TestCase):
 
 
 class LoggingOutputTests(unittest.TestCase):
+    """Capture configured handlers and restore global logging after each scenario."""
+
     def setUp(self) -> None:
+        """Capture stdout while preserving root handlers and library logger levels for cleanup."""
         self.root = logging.getLogger()
         self.original_handlers = self.root.handlers[:]
         self.original_level = self.root.level
@@ -107,6 +113,7 @@ class LoggingOutputTests(unittest.TestCase):
         self.addCleanup(stdout.stop)
 
     def restore_logging(self) -> None:
+        """Close test handlers and restore saved root handlers, severity, and library levels."""
         for handler in self.root.handlers:
             handler.close()
         self.root.handlers = self.original_handlers
