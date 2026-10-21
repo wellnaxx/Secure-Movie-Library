@@ -1,3 +1,10 @@
+"""Best-effort OMDb enrichment run in the API process after movie creation.
+
+Normal HTTP/API failures become stored enrichment errors. The background entry
+point logs unexpected fetch and persistence errors so they do not undo creation.
+There is no durable task queue, retry policy, or automatic title-change refresh.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -45,7 +52,11 @@ async def _fetch_rating_from_omdb(title: str) -> tuple[float | None, str | None]
     - rating (float | None)
     - enrichment_error (str | None)
 
-    Does not raise on normal API/network failures; instead returns an error message.
+    Timeouts, HTTP failures, transport errors, and invalid JSON return an error
+    message. An absent or unusable rating in an otherwise successful response
+    returns (None, None). Configuration errors and unexpected response shapes
+    propagate to the background task's safety net. The title is sent as the
+    OMDb ``t`` query parameter; this function does not write to the database.
     """
     config = get_omdb_config()
 
