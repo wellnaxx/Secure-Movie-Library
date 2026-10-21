@@ -1,9 +1,15 @@
+"""Environment lookup that distinguishes an unset variable from an empty value."""
+
 import os
 
 
 def get_env_var(key: str, default: str | None = None) -> str:
     """
-    Get environment variable with proper error handling.
+    Return a variable or its default without trimming or rejecting empty strings.
+
+    This helper reads os.environ only; configuration loaders own .env loading
+    and setting-specific validation. An explicitly empty variable wins over the
+    default and is returned unchanged.
 
     Args:
         key: Environment variable name
@@ -13,7 +19,7 @@ def get_env_var(key: str, default: str | None = None) -> str:
         str: Environment variable value
 
     Raises:
-        EnvironmentError: If variable not set and no default provided
+        OSError: If the variable is unset and no non-None default is provided.
     """
     value = os.getenv(key, default)
 
