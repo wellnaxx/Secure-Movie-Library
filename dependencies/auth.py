@@ -23,6 +23,11 @@ def get_current_user(
 
     Invalid, expired, or revoked tokens and deleted users raise
     InvalidAccessTokenError, mapped centrally to HTTP 401.
+
+    Current identity, role, password hash, and version come from the database;
+    signed role claims do not grant permissions after a role change. Missing
+    bearer credentials are handled by OAuth2PasswordBearer before this runs.
+    Repository failures propagate as server failures, not authentication errors.
     """
     payload = decode_token(token, expected_type="access")
     if payload is None:
