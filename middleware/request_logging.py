@@ -38,6 +38,7 @@ class RequestLoggingMiddleware:
         completed = False
 
         async def logged_send(message: Message) -> None:
+            """Forward ASGI messages and log completion after the final body send."""
             nonlocal status_code, completed
             if message["type"] == "http.response.start":
                 status_code = message["status"]
