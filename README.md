@@ -18,6 +18,40 @@ A FastAPI REST API for a shared movie catalog, with JWT authentication, role-bas
 
 Movies are shared across accounts; the schema has no movie ownership relationship.
 
+## Codebase documentation
+
+Module and callable docstrings describe inputs, results, errors, and side effects
+at the layer that owns them. Endpoint docstrings also appear in the generated
+Swagger UI and ReDoc pages. The [SQL statement reference](data/sql/README.md)
+documents every query's parameter order and trusted template slots. The
+[test suite guide](tests/README.md) describes coverage boundaries, fixtures,
+isolation, and focused test commands.
+
+### Request flow and responsibilities
+
+1. `main.py` installs request logging, shared exception handlers, and routers.
+   Its lifespan configures application logging; database/JWT/OMDb settings load
+   independently on first use.
+2. `dependencies/auth.py` validates access tokens, reloads the current account,
+   checks revocation, and enforces admin permissions where required. Pydantic
+   request models validate fields before the endpoint calls its service.
+3. `routers/` selects the operation and response status. `services/` applies
+   business rules, hashes passwords, issues tokens, and builds response models.
+   Movie creation schedules its enrichment task after a successful service call.
+4. `repositories/` selects SQL, binds values, and strictly validates returned
+   rows. `data/database.py` owns connections, per-call commits, rollback attempts,
+   named-row conversion, and driver-error translation. SQL files load through
+   `data/loader.py` and `data/queries.py`.
+5. `exception_handlers.py` maps typed application and repository failures to
+   HTTP responses. Request logging observes the delivered status and response
+   duration; enrichment runs afterward in the same API process.
+
+Each database helper opens its own connection. Multi-step operations such as
+create/reload and update/reload are not shared transactions. Password changes
+commit the password hash before separately incrementing `token_version`; failure
+of the second write does not roll back the first. The schema script bootstraps
+tables with `CREATE TABLE IF NOT EXISTS`; it does not migrate existing tables.
+
 ## Requirements and dependencies
 
 - Python **3.13 or newer**.
@@ -225,6 +259,9 @@ Repository queries live in `data/sql/movies/` and `data/sql/users/`. The loader 
 
 For example, `create_user()` executes `QUERIES.users.create` from `data/sql/users/create.sql` with a separate tuple of username, password hash, and role. Restart the application after editing query files so both loader and registry caches are rebuilt. Deploy the SQL files alongside the Python modules.
 
+See [data/sql/README.md](data/sql/README.md) for the complete binding and template
+contract, including the steps for adding a query.
+
 ## Repository error types
 
 Persistence errors are driver-independent classes defined in `utils/errors.py`:
@@ -289,6 +326,7 @@ The suite uses `unittest`, including asynchronous service tests and FastAPI `Tes
 ```shell
 python -m unittest discover -s tests -v
 python -m ruff check
+python -m ruff check data/database.py data/loader.py data/queries.py data/models.py
 python -m pyright --pythonpath .venv/Scripts/python.exe
 ```
 
@@ -305,6 +343,9 @@ python -m coverage report -m
 ```
 
 Coverage measures exercised code, not every possible input or live database behavior.
+
+See [tests/README.md](tests/README.md) for the coverage matrix, isolation rules,
+focused test commands, and current integration-test limits.
 
 ## Project structure
 
@@ -339,6 +380,7 @@ Coverage measures exercised code, not every possible input or live database beha
 │   ├── queries.py                # Lazy typed movie/user query registry
 │   ├── models.py                 # Pydantic schemas, validators, update types, status
 │   ├── sql/
+│   │   ├── README.md                # SQL bindings and template contracts
 │   │   ├── movies/
 │   │   │   ├── create.sql
 │   │   │   ├── delete.sql
@@ -370,6 +412,7 @@ Coverage measures exercised code, not every possible input or live database beha
 │   ├── logging_config.py         # Stdout and rotating-file logging setup
 │   └── env_vars.py               # Environment variable access
 └── tests/
+    ├── README.md                 # Coverage boundaries, isolation, test commands
     ├── test_config.py            # Settings validation, defaults, cache lifecycle
     ├── test_database.py          # Cleanup, transactions, result handling
     ├── test_exception_handlers.py # HTTP mappings, headers, sanitization, app integration
