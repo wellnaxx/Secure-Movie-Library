@@ -1,4 +1,10 @@
-"""Driver-independent repository failures and application business errors."""
+"""Driver-independent repository failures and application business errors.
+
+Services translate persistence errors only when their operation gives the error
+additional meaning. exception_handlers maps these types to HTTP responses.
+Messages on expected application errors are public; keep secrets and driver
+details in chained causes rather than in those messages.
+"""
 
 
 class RepositoryError(RuntimeError):
@@ -58,16 +64,16 @@ class MovieServiceError(Exception):
 
 
 class MovieNotFoundError(MovieServiceError):
-    pass
+    """A movie is absent before an operation or cannot be reloaded afterward."""
 
 
 class MovieCreationError(MovieServiceError):
-    pass
+    """A movie insert succeeded but the new record could not be reloaded."""
 
 
 class MovieDeleteError(MovieServiceError):
-    pass
+    """An initially present movie could not be deleted by the subsequent write."""
 
 
 class EmptyMovieUpdateError(MovieServiceError):
-    pass
+    """An update supplied no fields, so no database operation is attempted."""
