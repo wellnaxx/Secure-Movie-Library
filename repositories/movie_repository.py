@@ -1,3 +1,12 @@
+"""Movie persistence using validated rows and file-backed parameterized SQL.
+
+Reads validate required columns and types without coercion, raising Pydantic
+ValidationError for malformed rows. DatabaseError and DuplicateKeyError propagate
+from database helpers. Each write commits independently; services own business
+rules and routers own authentication. SQL template fields accept trusted column
+names and directions only, while all user values are bound separately.
+"""
+
 from datetime import datetime
 from decimal import Decimal
 from typing import TypedDict
@@ -47,6 +56,11 @@ def list_movies(
     - q: substring match on title (case-insensitive depending on collation; utf8mb4_unicode_ci is CI)
     - sort_by: one of: rating, title, release_year, created_at
     - order: asc|desc
+
+    Unknown sort fields fall back to rating; only a case-insensitive "asc" uses
+    ascending order. Rating sorting keeps NULL last and breaks ties by ID.
+    Nonempty q is stripped and wrapped in percent signs for LIKE; SQL wildcard
+    characters retain their meaning. No pagination is applied.
     """
 
     sort_columns = {
@@ -141,6 +155,3 @@ def delete_movie(movie_id: int) -> int:
     Delete a movie by id. Returns the number of affected rows (0 if not found).
     """
     return write_query(QUERIES.movies.delete, (movie_id,))
-
-
-"""Movie persistence using validated rows and file-backed parameterized SQL."""
