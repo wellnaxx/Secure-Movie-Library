@@ -20,7 +20,7 @@ mode. Use the same interpreter in the editor to resolve packages and type stubs.
 
 ## Coverage by boundary
 
-The suite currently has 204 discovered test methods. Many use subtests for input
+The suite currently has 210 discovered test methods. Many use subtests for input
 matrices; that count is not a count of all inputs exercised.
 
 | Module | Contract exercised |
@@ -30,13 +30,13 @@ matrices; that count is not a count of all inputs exercised.
 | `test_sql_loader.py` | Real temporary SQL files, UTF-8, whitespace, path boundaries, failures/retries, cached reads, lazy immutable groups and registry completeness |
 | `test_database.py` | Mocked driver connections/cursors, named rows, generated IDs, parameter binding, transaction calls, duplicate classification and resource cleanup |
 | `test_movie_repository.py` | Movie row validation, missing results, Decimal ratings, filter/sort templates, update allowlists, bindings and propagated errors |
-| `test_user_repository.py` | User row validation, missing results, roles, generated IDs, bindings, password/role/version writes and propagated errors |
+| `test_user_repository.py` | User row validation, missing results, roles, bindings, atomic password/revocation statement, commit/rollback and propagated errors |
 | `test_jwt_handler.py` | Real local signing/decoding, expiration, purpose separation, malformed claims, required identity, configuration and caching |
 | `test_movies_service.py` | Response models, create/reload failures, list forwarding, missing movies, partial updates, explicit NULL and delete failures |
 | `test_user_service.py` | Registration conflicts and races, credential checks, refresh/revocation, password changes and role changes with mocked persistence/hashing |
 | `test_rating_service.py` | Rating parsing/range boundaries, mocked HTTP responses/timeouts and persistence of enrichment results/errors |
 | `test_movies_router.py` | HTTP validation/statuses, serializers, query options, authentication/roles, background failures and real JWT checks with mocked persistence |
-| `test_users_router.py` | Registration success/conflicts and translated database failures through the HTTP boundary |
+| `test_users_router.py` | Registration success/conflicts, translated database failures, and password-change JWT revocation with mocked persistence |
 | `test_exception_handlers.py` | Shared error mappings, public messages, bearer challenges, sanitization, framework defaults, user-operation failure context and main-app integration |
 | `test_request_logging.py` | Request privacy, timings, streaming, handled/unhandled errors, background failures, non-HTTP scopes and startup logging |
 
@@ -76,8 +76,10 @@ Coverage measures executed lines and branches, not correctness for every input.
 The suite does not establish live-driver SQL compatibility, database isolation
 under concurrent transactions, real OMDb availability, or durable background-task
 delivery. Database row tests verify validation with representative Python values;
-they do not execute the SQL on MariaDB. Password writes and token-version bumps
-remain separate commits in the implementation.
+they do not execute the SQL on MariaDB. Password/revocation tests verify one
+combined statement, commit/rollback calls, missing users, and real JWT rejection
+after a successful change. HTTP scenarios use simulated repository state; they
+do not establish live-database transaction behavior under concurrent requests.
 
 When adding behavior, extend the test at the boundary that owns the rule. Add
 HTTP assertions when status codes, public messages, headers, validation, or

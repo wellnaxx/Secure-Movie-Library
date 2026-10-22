@@ -60,9 +60,11 @@ def get_user_by_id(user_id: int) -> UserRow | None:
 
 
 def update_password(user_id: int, password_hash: str) -> int:
-    """Store an already hashed password and return the affected row count.
+    """Atomically replace the password hash and increment the token version.
 
-    Token invalidation is a separate operation performed by bump_token_version.
+    Both changes use one UPDATE and commit together, revoking existing access
+    and refresh tokens. Return the affected row count (zero for a missing user).
+    The version is incremented in SQL rather than computed from a stale user row.
     """
     return write_query(QUERIES.users.update_password, (password_hash, user_id))
 

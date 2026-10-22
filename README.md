@@ -7,7 +7,7 @@ A FastAPI REST API for a shared movie catalog, with JWT authentication, role-bas
 - Create, search, sort, fetch, update, and delete movies.
 - Fetch OMDb ratings after creation using FastAPI background tasks.
 - Issue HS256 access and refresh tokens with validated, typed payloads.
-- Revoke all of a user's existing tokens on logout or password change by incrementing `token_version`.
+- Revoke all of a user's existing tokens on logout or password change by incrementing `token_version`; password changes update the hash and version atomically.
 - Validate usernames, password strength, movie titles, and release years with Pydantic.
 - Distinguish omitted movie update fields from explicit null values.
 - Validate database rows with Pydantic `TypeAdapter` and `TypedDict` schemas.
@@ -47,10 +47,10 @@ isolation, and focused test commands.
    duration; enrichment runs afterward in the same API process.
 
 Each database helper opens its own connection. Multi-step operations such as
-create/reload and update/reload are not shared transactions. Password changes
-commit the password hash before separately incrementing `token_version`; failure
-of the second write does not roll back the first. The schema script bootstraps
-tables with `CREATE TABLE IF NOT EXISTS`; it does not migrate existing tables.
+create/reload and update/reload are not shared transactions. Password changes use
+a single UPDATE to replace the hash and increment `token_version`, so both changes
+commit or roll back together. A user deleted before that write produces `404`.
+The schema script bootstraps tables with `CREATE TABLE IF NOT EXISTS`; it does not migrate existing tables.
 
 ## Requirements and dependencies
 
@@ -332,7 +332,7 @@ python -m pyright --pythonpath .venv/Scripts/python.exe
 
 On Linux/macOS, use `.venv/bin/python` for Pyright's interpreter path. Select the same environment in VS Code/Pylance so it can find runtime packages and type stubs. Ruff configuration is stored in `pyproject.toml`; strict Pyright settings are not currently committed there.
 
-The current suite contains **204 tests** covering typed configuration, centralized exception handlers, application/request logging, SQL loading, database helpers, JWT handling, movie/user repositories, movie/user services, OMDb enrichment, and HTTP routes. Handler tests cover status mapping, bearer challenges, sanitization, framework validation, contextual user errors, and main-app/request-logging integration. Typed-error tests cover duplicate classification, unrelated integrity/connection failures, rollback and cleanup, original exception causes, and registration conflicts after a successful pre-check. Logging tests cover startup, level filtering, rotating files, cache lifecycle, request privacy, streaming, and exception handling. SQL-loader tests cover real files, caching, missing/empty files, path validation, working-directory independence, and lazy query groups. Configuration tests cover defaults, validation, immutability, secret-safe representations, cache overrides/resets, and independent loading. Movie-router tests exercise real JWT and role checks while mocking database access. Users-router HTTP tests cover registration and failure handling for login, refresh, password changes, role updates, and logout. Database, repository, and enrichment tests use mocks rather than live MariaDB or OMDb services.
+The current suite contains **210 tests** covering typed configuration, centralized exception handlers, application/request logging, SQL loading, database helpers, JWT handling, movie/user repositories, movie/user services, OMDb enrichment, and HTTP routes. Handler tests cover status mapping, bearer challenges, sanitization, framework validation, contextual user errors, and main-app/request-logging integration. Typed-error tests cover duplicate classification, unrelated integrity/connection failures, rollback and cleanup, original exception causes, and registration conflicts after a successful pre-check. Logging tests cover startup, level filtering, rotating files, cache lifecycle, request privacy, streaming, and exception handling. SQL-loader tests cover real files, caching, missing/empty files, path validation, working-directory independence, and lazy query groups. Configuration tests cover defaults, validation, immutability, secret-safe representations, cache overrides/resets, and independent loading. Movie-router tests exercise real JWT and role checks while mocking database access. Users-router HTTP tests cover registration, atomic password-change revocation of real JWT pairs with mocked persistence, and failure handling for login, refresh, password changes, role updates, and logout. Database, repository, and enrichment tests use mocks rather than live MariaDB or OMDb services.
 
 For coverage, install the separate optional measurement tool:
 
@@ -426,7 +426,7 @@ focused test commands, and current integration-test limits.
     ├── test_request_logging.py   # HTTP logs, streaming, privacy, lifespan setup
     ├── test_sql_loader.py        # SQL loading, cache, paths, lazy registry
     ├── test_user_service.py      # Registration, authentication, account changes
-    └── test_users_router.py      # Registration HTTP success and typed-error mapping
+    └── test_users_router.py      # Registration errors and password-change revocation
 ```
 
 ## Database diagram

@@ -3,10 +3,12 @@
 import unittest
 from datetime import datetime
 from typing import TYPE_CHECKING
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from pydantic import ValidationError
 
+from config.database import DBConfig
+from data import database
 from repositories.user_repository import (
     UserRow,
     bump_token_version,
@@ -92,7 +94,11 @@ class UserRepositoryTests(unittest.TestCase):
 
     def test_writes_return_affected_counts_and_bind_values(self) -> None:
         cases: list[tuple[Callable[[], int], str, tuple[object, ...]]] = [
-            (lambda: update_password(1, "new-hash"), "SET password_hash = ?", ("new-hash", 1)),
+            (
+                lambda: update_password(1, "new-hash"),
+                "SET password_hash = ?, token_version = token_version + 1",
+                ("new-hash", 1),
+            ),
             (lambda: update_role(1, "ADMIN"), "SET role = ?", ("ADMIN", 1)),
             (lambda: update_role(1, "USER"), "SET role = ?", ("USER", 1)),
             (lambda: bump_token_version(1), "SET token_version = token_version + 1", (1,)),
@@ -177,3 +183,36 @@ class UserRepositoryTests(unittest.TestCase):
         ):
             create_user("testuser", "stored-hash")
         self.assertIs(caught.exception, error)
+
+    def test_password_and_revocation_use_one_statement_and_transaction(self) -> None:
+        for failure in (None, "execute", "commit"):
+            connection = Mock(spec=database.Connection)
+            cursor = Mock(spec=database.Cursor)
+            connection.cursor.return_value = cursor
+            cursor.rowcount = 1
+            if failure == "execute":
+                cursor.execute.side_effect = RuntimeError("statement failed")
+            elif failure == "commit":
+                connection.commit.side_effect = RuntimeError("commit failed")
+            with (
+                self.subTest(failure=failure),
+                patch("data.database._get_db_config", return_value=DBConfig("localhost", "db", "app", "")),
+                patch("data.database._get_connection", return_value=connection) as connect,
+            ):
+                if failure is None:
+                    self.assertEqual(update_password(1, "new-hash"), 1)
+                    connection.commit.assert_called_once_with()
+                    connection.rollback.assert_not_called()
+                else:
+                    with self.assertLogs("data.database", level="ERROR"), self.assertRaises(DatabaseError):
+                        update_password(1, "new-hash")
+                    connection.rollback.assert_called_once_with()
+                    if failure == "execute":
+                        connection.commit.assert_not_called()
+            connect.assert_called_once()
+            cursor.execute.assert_called_once_with(
+                "UPDATE users\nSET password_hash = ?, token_version = token_version + 1\nWHERE id = ?",
+                ("new-hash", 1),
+            )
+            cursor.close.assert_called_once_with()
+            connection.close.assert_called_once_with()

@@ -46,7 +46,7 @@ The service distinguishes an omitted field from an explicitly supplied NULL.
 | `users/create.sql` | username, password_hash, role | Insert a user; helper returns its generated ID |
 | `users/get_by_username.sql` | username | One user row or no match |
 | `users/get_by_id.sql` | user_id | One user row or no match |
-| `users/update_password.sql` | password_hash, user_id | Replace an already hashed password |
+| `users/update_password.sql` | password_hash, user_id | Atomically replace the hash and increment token_version to revoke existing tokens |
 | `users/update_role.sql` | role, user_id | Replace the role after caller validation/authorization |
 | `users/bump_token_version.sql` | user_id | Revoke existing access and refresh tokens by incrementing the version |
 
@@ -55,6 +55,12 @@ translates MariaDB `1062` / SQL state `23000` into `DuplicateKeyError`; registra
 translates that into `UsernameAlreadyExistsError`. Other failures are not username
 conflicts. Hashing, role authorization, and public response shaping belong above
 the SQL layer.
+
+Password changes use one UPDATE for `password_hash` and
+`token_version = token_version + 1`, sharing one connection and commit. A failed
+write cannot leave a committed new password with an unchanged token version.
+Zero affected rows means the user is missing. The standalone version-bump query
+remains available for logout; password changes do not call it separately.
 
 ## Editing or adding a query
 

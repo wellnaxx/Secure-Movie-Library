@@ -254,14 +254,13 @@ class TestRefreshTokenPair(unittest.TestCase):
 
 
 class TestChangePassword(unittest.TestCase):
-    """Verify old-password checks and the ordered password/version repository calls."""
+    """Verify password checks and one atomic password/revocation repository call."""
 
-    @patch("services.user_service.bump_token_version")
     @patch("services.user_service.update_password")
     @patch("services.user_service.hash_password")
     @patch("services.user_service.verify_password")
     def test_changes_password_and_bumps_token_version(
-        self, mock_verify: MagicMock, mock_hash: MagicMock, mock_update: MagicMock, mock_bump: MagicMock
+        self, mock_verify: MagicMock, mock_hash: MagicMock, mock_update: MagicMock
     ) -> None:
         mock_verify.return_value = True
         mock_hash.return_value = "new_hash"
@@ -272,15 +271,60 @@ class TestChangePassword(unittest.TestCase):
         change_password(_internal_user(), UserUpdate(old_password="OldPass1!", new_password="NewPass1@"))
 
         mock_update.assert_called_once_with(1, "new_hash")
-        mock_bump.assert_called_once_with(1)
+        mock_verify.assert_called_once_with("OldPass1!", "hashed_secret")
+        mock_hash.assert_called_once_with("NewPass1@")
 
     @patch("services.user_service.verify_password")
     def test_raises_incorrect_old_password_when_verify_fails(self, mock_verify: MagicMock) -> None:
         mock_verify.return_value = False
         from data.models import UserUpdate
 
-        with self.assertRaises(IncorrectOldPasswordError):
+        with (
+            patch("services.user_service.hash_password") as hashing,
+            patch("services.user_service.update_password") as update,
+            self.assertRaises(IncorrectOldPasswordError),
+        ):
             change_password(_internal_user(), UserUpdate(old_password="WrongOld1!", new_password="NewPass1@"))
+        hashing.assert_not_called()
+        update.assert_not_called()
+
+    def test_raises_user_not_found_when_account_disappears_before_write(self) -> None:
+        from data.models import UserUpdate
+
+        with (
+            patch("services.user_service.verify_password", return_value=True),
+            patch("services.user_service.hash_password", return_value="new_hash"),
+            patch("services.user_service.update_password", return_value=0) as update,
+            self.assertRaises(UserNotFoundError),
+        ):
+            change_password(_internal_user(), UserUpdate(old_password="OldPass1!", new_password="NewPass1@"))
+        update.assert_called_once_with(1, "new_hash")
+
+    def test_database_failure_propagates_from_the_single_password_write(self) -> None:
+        from data.models import UserUpdate
+
+        error = DatabaseError("write failed")
+        with (
+            patch("services.user_service.verify_password", return_value=True),
+            patch("services.user_service.hash_password", return_value="new_hash"),
+            patch("services.user_service.update_password", side_effect=error) as update,
+            self.assertRaises(DatabaseError) as caught,
+        ):
+            change_password(_internal_user(), UserUpdate(old_password="OldPass1!", new_password="NewPass1@"))
+        self.assertIs(caught.exception, error)
+        update.assert_called_once_with(1, "new_hash")
+
+    def test_hashing_failure_does_not_change_password_or_revoke_tokens(self) -> None:
+        from data.models import UserUpdate
+
+        with (
+            patch("services.user_service.verify_password", return_value=True),
+            patch("services.user_service.hash_password", side_effect=ValueError("hash failed")),
+            patch("services.user_service.update_password") as update,
+            self.assertRaises(ValueError),
+        ):
+            change_password(_internal_user(), UserUpdate(old_password="OldPass1!", new_password="NewPass1@"))
+        update.assert_not_called()
 
 
 class TestUpdateUserRole(unittest.TestCase):

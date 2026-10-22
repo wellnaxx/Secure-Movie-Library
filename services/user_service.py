@@ -2,7 +2,8 @@
 
 Callers provide validated request models and enforce permissions. Services hash
 passwords, consult current database state, and raise typed errors; HTTP response
-mapping belongs to exception_handlers. Multi-step writes commit independently.
+mapping belongs to exception_handlers. Password replacement and token revocation
+share a single write; other multi-step operations use independent helper calls.
 """
 
 from auth.hashing import hash_password, verify_password
@@ -16,7 +17,6 @@ from data.models import (
     UserUpdate,
 )
 from repositories.user_repository import (
-    bump_token_version,
     create_user,
     get_user_by_id,
     get_user_by_username,
@@ -145,18 +145,19 @@ def refresh_token_pair(refresh_request: RefreshRequest) -> TokenPairResponse:
 def change_password(current_user: UserInternal, password_data: UserUpdate) -> None:
     """Verify the old password, replace its hash, and revoke prior token pairs.
 
-    Raises IncorrectOldPasswordError before writes if verification fails. The
-    hash update and token-version increment are separate committed operations;
-    failure of the second does not roll back the first. Request-model validation
-    enforces password strength and that the new password differs from the old.
+    Raises IncorrectOldPasswordError before writes if verification fails. One
+    UPDATE replaces the hash and increments the database token version, so both
+    changes commit or roll back together. UserNotFoundError means the account
+    disappeared before the write. Request-model validation enforces password
+    strength and that the new password differs from the old.
     """
     if not verify_password(password_data.old_password, current_user.password_hash):
         raise IncorrectOldPasswordError("Old password is incorrect.")
 
     new_password_hash = hash_password(password_data.new_password)
 
-    update_password(current_user.id, new_password_hash)
-    bump_token_version(current_user.id)
+    if update_password(current_user.id, new_password_hash) == 0:
+        raise UserNotFoundError("User not found.")
 
 
 def update_user_role(user_id: int, role: str) -> UserPublic:
