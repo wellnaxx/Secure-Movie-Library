@@ -324,9 +324,11 @@ Request records exclude query strings, authorization headers, and request bodies
 The suite uses `unittest`, including asynchronous service tests and FastAPI `TestClient` HTTP tests:
 
 ```shell
-python -m unittest discover -s tests -v
+python -m unittest discover -s tests -t . -v
+python -m unittest tests.services.test_user_service -v
 python -m ruff check
 python -m ruff check data/database.py data/loader.py data/queries.py data/models.py
+python -m ruff check tests/data/test_database.py tests/data/test_sql_loader.py
 python -m pyright --pythonpath .venv/Scripts/python.exe
 ```
 
@@ -338,7 +340,7 @@ For coverage, install the separate optional measurement tool:
 
 ```shell
 python -m pip install coverage
-python -m coverage run --branch --source=exception_handlers,auth,config,data,dependencies,middleware,repositories,routers,services,utils -m unittest discover -s tests
+python -m coverage run --branch --source=exception_handlers,auth,config,data,dependencies,middleware,repositories,routers,services,utils -m unittest discover -s tests -t .
 python -m coverage report -m
 ```
 
@@ -412,21 +414,36 @@ focused test commands, and current integration-test limits.
 │   ├── logging_config.py         # Stdout and rotating-file logging setup
 │   └── env_vars.py               # Environment variable access
 └── tests/
-    ├── README.md                 # Coverage boundaries, isolation, test commands
-    ├── test_config.py            # Settings validation, defaults, cache lifecycle
-    ├── test_database.py          # Cleanup, transactions, result handling
-    ├── test_exception_handlers.py # HTTP mappings, headers, sanitization, app integration
-    ├── test_jwt_handler.py       # JWT validation, expiration, settings, caching
-    ├── test_logging.py           # Logging settings, levels, handlers, file rotation
-    ├── test_movie_repository.py  # Movie queries, sorting, validation, failures
-    ├── test_user_repository.py   # User queries, validation, parameter binding
-    ├── test_movies_router.py     # HTTP behavior, JWT/roles, background failures
-    ├── test_movies_service.py    # Movie business rules
-    ├── test_rating_service.py    # OMDb parsing, HTTP errors, persistence
-    ├── test_request_logging.py   # HTTP logs, streaming, privacy, lifespan setup
-    ├── test_sql_loader.py        # SQL loading, cache, paths, lazy registry
-    ├── test_user_service.py      # Registration, authentication, account changes
-    └── test_users_router.py      # Registration errors and password-change revocation
+    ├── __init__.py                 # Test package for recursive discovery
+    ├── README.md                   # Coverage boundaries, isolation, test commands
+    ├── auth/                       # JWT handling
+    │   ├── __init__.py
+    │   └── test_jwt_handler.py
+    ├── config/                     # Typed settings and cache lifecycle
+    │   ├── __init__.py
+    │   └── test_config.py
+    ├── data/                       # Database helpers and SQL loading
+    │   ├── __init__.py
+    │   ├── test_database.py
+    │   └── test_sql_loader.py
+    ├── http/                       # Routers, handlers, request middleware
+    │   ├── __init__.py
+    │   ├── test_exception_handlers.py
+    │   ├── test_movies_router.py
+    │   ├── test_request_logging.py
+    │   └── test_users_router.py
+    ├── repositories/               # SQL bindings and row validation
+    │   ├── __init__.py
+    │   ├── test_movie_repository.py
+    │   └── test_user_repository.py
+    ├── services/                   # Business rules and OMDb enrichment
+    │   ├── __init__.py
+    │   ├── test_movies_service.py
+    │   ├── test_rating_service.py
+    │   └── test_user_service.py
+    └── utils/                      # Logging configuration and output
+        ├── __init__.py
+        └── test_logging.py
 ```
 
 ## Database diagram

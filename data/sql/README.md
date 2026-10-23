@@ -68,7 +68,7 @@ remains available for logout; password changes do not call it separately.
 2. Register it in the frozen query dataclass and its `QueryRegistry` property.
 3. Keep each repository argument tuple in placeholder order. Allowlist any new
    identifier used in a structural slot.
-4. Update repository binding tests and this reference. `test_sql_loader.py`
+4. Update repository binding tests and this reference. [`tests/data/test_sql_loader.py`](../../tests/data/test_sql_loader.py)
    checks that the registry covers all query files.
 5. Run the SQL-loader and affected repository tests from the repository root.
 
