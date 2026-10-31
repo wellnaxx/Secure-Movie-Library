@@ -1,73 +1,30 @@
 # Secure Movie Library
 
-A FastAPI REST API for a shared movie catalog, with JWT authentication, role-based access, and background IMDb rating enrichment through OMDb. Movie reads require authentication; movie writes require an `ADMIN` account. Registration, login, and refresh are public endpoints.
+A FastAPI REST API for a shared movie catalog with JWT authentication, admin-only
+writes, and background IMDb rating enrichment through OMDb.
 
 ## Features
 
-- Create, search, sort, fetch, update, and delete movies.
-- Fetch OMDb ratings after creation using FastAPI background tasks.
-- Issue HS256 access and refresh tokens with validated, typed payloads.
-- Revoke all of a user's existing tokens on logout or password change by incrementing `token_version`; password changes update the hash and version atomically.
-- Validate usernames, password strength, movie titles, and release years with Pydantic.
-- Distinguish omitted movie update fields from explicit null values.
-- Validate database rows with Pydantic `TypeAdapter` and `TypedDict` schemas.
-- Distinguish unique-key conflicts from other persistence errors, including racing username registrations.
-- Map application and repository errors centrally to consistent HTTP responses with sanitized server failures.
-- Use parameterized MariaDB queries without an ORM, with connection cleanup and write rollback on failure.
-- Configure application logging to stdout and optional rotating files, with HTTP status and response-time records.
+- Create, search, sort, update, and delete movies.
+- Issue access/refresh tokens and check permissions against current account roles.
+- Revoke existing tokens on logout or password change; password and token-version
+  updates commit atomically.
+- Validate requests and database rows with Pydantic.
+- Use parameterized MariaDB queries, centralized error handlers, and request logging.
 
-Movies are shared across accounts; the schema has no movie ownership relationship.
+## Requirements
 
-## Codebase documentation
-
-Module and callable docstrings describe inputs, results, errors, and side effects
-at the layer that owns them. Endpoint docstrings also appear in the generated
-Swagger UI and ReDoc pages. The [SQL statement reference](data/sql/README.md)
-documents every query's parameter order and trusted template slots. The
-[test suite guide](tests/README.md) describes coverage boundaries, fixtures,
-isolation, and focused test commands.
-
-### Request flow and responsibilities
-
-1. `main.py` installs request logging, shared exception handlers, and routers.
-   Its lifespan configures application logging; database/JWT/OMDb settings load
-   independently on first use.
-2. `dependencies/auth.py` validates access tokens, reloads the current account,
-   checks revocation, and enforces admin permissions where required. Pydantic
-   request models validate fields before the endpoint calls its service.
-3. `routers/` selects the operation and response status. `services/` applies
-   business rules, hashes passwords, issues tokens, and builds response models.
-   Movie creation schedules its enrichment task after a successful service call.
-4. `repositories/` selects SQL, binds values, and strictly validates returned
-   rows. `data/database.py` owns connections, per-call commits, rollback attempts,
-   named-row conversion, and driver-error translation. SQL files load through
-   `data/loader.py` and `data/queries.py`.
-5. `exception_handlers.py` maps typed application and repository failures to
-   HTTP responses. Request logging observes the delivered status and response
-   duration; enrichment runs afterward in the same API process.
-
-Each database helper opens its own connection. Multi-step operations such as
-create/reload and update/reload are not shared transactions. Password changes use
-a single UPDATE to replace the hash and increment `token_version`, so both changes
-commit or roll back together. A user deleted before that write produces `404`.
-The schema script bootstraps tables with `CREATE TABLE IF NOT EXISTS`; it does not migrate existing tables.
-
-## Requirements and dependencies
-
-- Python **3.13 or newer**.
-- A running MariaDB server and a database user with access to the application tables.
-- MariaDB Connector/C when required by the Python driver's installation on your platform.
+- Python 3.13 or newer.
+- MariaDB, plus Connector/C if required by the Python driver's installation.
 - An OMDb API key for rating enrichment.
 
-Runtime dependencies are listed in both [requirements.txt](requirements.txt) and [pyproject.toml](pyproject.toml): FastAPI, Uvicorn, python-dotenv, Pydantic, python-jose with cryptography, Passlib, bcrypt, mariadb, httpx, and python-multipart.
+Dependencies and development tools are listed in [pyproject.toml](pyproject.toml).
 
-`pyproject.toml` also lists development tools and type stubs. Its Ruff configuration targets Python 3.13 with a 112-character line limit; `data/` is excluded from Ruff checks by the current configuration.
-
-## Local setup
+## Setup
 
 Run commands from the repository root.
 
-### 1. Create a virtual environment and install dependencies
+### 1. Install dependencies
 
 ```powershell
 python -m venv .venv
@@ -75,31 +32,22 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-On Linux/macOS, activate with `source .venv/bin/activate` instead.
-
-For development, also install the requirements listed under `project.optional-dependencies.dev`:
-
-```shell
-python -m pip install "types-passlib>=1.7.7" "types-python-jose>=3.3.4" "mypy>=1.15" "pyright>=1.1" "pytest>=8.3" "ruff>=0.11" "pymetrica>=1.5.6"
-```
-
-The current setup runs directly from the repository using `main:app`; the installation commands above do not require packaging the project.
-
-### 2. Create the database tables
-
-Run [data/schema.sql](data/schema.sql) through your database client. The script creates and selects `movie_library`, then creates the `users` and `movies` tables.
-
-From a shell supporting input redirection:
+On Linux/macOS, activate with `source .venv/bin/activate`.
+For tests and checks, also install:
 
 ```shell
-mysql -u <database-user> -p < data/schema.sql
+python -m pip install types-passlib types-python-jose ruff pyright
 ```
 
-Alternatively, in the MariaDB/MySQL interactive client:
+### 2. Create the database
+
+Run [data/schema.sql](data/schema.sql) in the MariaDB/MySQL interactive client:
 
 ```sql
 SOURCE C:/path/to/Secure-Movie-Library/data/schema.sql;
 ```
+
+The script creates `movie_library` and its tables. It does not migrate existing tables.
 
 ### 3. Configure the environment
 
@@ -107,24 +55,24 @@ SOURCE C:/path/to/Secure-Movie-Library/data/schema.sql;
 Copy-Item .env.example .env
 ```
 
-On Linux/macOS, use `cp .env.example .env`. Set the values in `.env` to match your database and OMDb account.
+On Linux/macOS, use `cp .env.example .env`.
 
 | Variable | Purpose / default |
 |---|---|
 | `DB_HOST` | Required database host |
 | `DB_NAME` | Required database name; schema uses `movie_library` |
 | `DB_USER` | Required database username |
-| `DB_PASSWORD` | Required database password |
-| `DB_PORT` | `3306` |
-| `DB_CONNECT_TIMEOUT` | `5` seconds |
-| `JWT_SECRET_KEY` | Required signing secret, at least 32 characters |
-| `JWT_EXPIRATION_MINUTES` | Access lifetime: `30` minutes |
-| `JWT_REFRESH_EXPIRATION_DAYS` | Refresh lifetime: `7` days |
-| `OMDB_API_KEY` | Required when running rating enrichment |
-| `OMDB_BASE_URL` | `https://www.omdbapi.com/` |
-| `OMDB_TIMEOUT_SECONDS` | HTTP timeout: `10` seconds; finite and greater than zero |
-| `LOG_LEVEL` | `INFO`; accepts `CRITICAL`, `ERROR`, `WARNING`, `INFO`, `DEBUG`, or `NOTSET` (case-insensitive) |
-| `LOG_FILE` | Optional file path; blank or unset means stdout only |
+| `DB_PASSWORD` | Required; an empty password is allowed |
+| `DB_PORT` | `3306`; range 1-65535 |
+| `DB_CONNECT_TIMEOUT` | `5` seconds; positive integer |
+| `JWT_SECRET_KEY` | Required; at least 32 characters excluding surrounding whitespace |
+| `JWT_EXPIRATION_MINUTES` | Access lifetime: `30` minutes; positive integer |
+| `JWT_REFRESH_EXPIRATION_DAYS` | Refresh lifetime: `7` days; positive integer |
+| `OMDB_API_KEY` | Required for enrichment |
+| `OMDB_BASE_URL` | `https://www.omdbapi.com/`; absolute HTTP(S) URL |
+| `OMDB_TIMEOUT_SECONDS` | `10` seconds; finite and positive |
+| `LOG_LEVEL` | `INFO`; accepts standard names from `NOTSET` through `CRITICAL` |
+| `LOG_FILE` | Optional path; blank means stdout only |
 
 Generate a signing secret with:
 
@@ -132,222 +80,155 @@ Generate a signing secret with:
 python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-Database, JWT, and OMDb settings use immutable typed configuration objects in `config/`. Each group loads `.env` and environment variables on first use, validates its settings, and caches the successful result. Database ports must be in the range 1-65535; connection timeouts and token lifetimes must be positive. Blank database hosts, names, usernames, signing secrets, and OMDb API keys are rejected. An empty database password is allowed. Signing secrets require at least 32 characters after excluding surrounding whitespace. OMDb endpoints must be absolute HTTP(S) URLs. Secrets are excluded from configuration object representations.
+Settings load independently on first use and are cached. Restart after changing
+configuration or SQL files.
 
-Restart the process after changing environment settings. Tests and embedding applications can also replace or reset individual caches:
-
-```python
-from config.jwt import JWTConfig, get_jwt_config, load_jwt_config, set_jwt_config
-
-settings = get_jwt_config()        # Load once, then reuse the same object.
-fresh = load_jwt_config()          # Read fresh settings without changing the cache.
-set_jwt_config(JWTConfig(secret_key="a-development-only-secret-at-least-32-characters"))
-set_jwt_config(None)              # Reload from the environment on the next get.
-```
-
-`config.database`, `config.omdb`, and `config.logging` expose the same load/get/set pattern for `DBConfig`, `OMDbConfig`, and `LoggingConfig`. Configuration groups load independently, so JWT operations do not require database or OMDb settings. The existing `data.database.DBConfig`, `load_db_config`, and `set_db_config` imports remain available. The JWT signing algorithm remains HS256 and the existing `JWT_SECRET_KEY` environment variable is unchanged.
-
-### 4. Start the API and create an admin account
+### 4. Start the API
 
 ```shell
 python -m uvicorn main:app --reload
 ```
 
-Interactive documentation: [Swagger UI](http://localhost:8000/docs), [ReDoc](http://localhost:8000/redoc). The OpenAPI schema is at `/openapi.json`.
+API documentation: [Swagger UI](http://localhost:8000/docs),
+[ReDoc](http://localhost:8000/redoc), and `/openapi.json`.
 
-Register an account through `POST /users/register`, for example:
+### 5. Create an admin
+
+Register through `POST /users/register`:
 
 ```json
 {"username": "admin", "password": "SecurePass123!"}
 ```
 
-Registration always creates a `USER` account. Bootstrap the first admin through your database client:
+Registration creates a `USER`. Promote the first admin through the database:
 
 ```sql
 USE movie_library;
 UPDATE users SET role = 'ADMIN' WHERE username = 'admin';
 ```
 
-Afterward, admins can change roles through the API. Login accepts form fields `username` and `password` using `application/x-www-form-urlencoded`; other request bodies use JSON. Send access tokens as `Authorization: Bearer <access_token>`.
+Admins can then change roles through the API.
 
-### Seed script and Postman collection
+### Seed data and smoke tests
 
-[data/seed_data.sql](data/seed_data.sql) resets both tables and inserts an `admin` account with role `ADMIN`, password `SecurePass123!`, and token version `0`. Run it after `schema.sql` against a disposable development database; it deletes existing users and movies. It leaves the movie catalog empty.
-
-From the MariaDB/MySQL interactive client:
+[data/seed_data.sql](data/seed_data.sql) **deletes all users and movies**, then
+creates `admin` / `SecurePass123!` with role `ADMIN`. The catalog stays empty.
+Run it after the schema against a disposable development database:
 
 ```sql
 SOURCE C:/path/to/Secure-Movie-Library/data/seed_data.sql;
 ```
 
-The bundled Postman smoke-test collection defaults to `http://localhost:8000`, username `admin`, and password `SecurePass123!`. Seed or create that account first and check the collection variables against your environment. The collection changes passwords and token state and creates test data. To repeat a run against a disposable database, rerun `seed_data.sql`, reset `adminPassword` to `SecurePass123!`, and clear token and movie-ID variables.
+The bundled Postman collection uses that account and `http://localhost:8000`.
+It changes passwords, tokens, and movie data. Before repeating a run, reseed the
+database, reset `adminPassword`, and clear token and movie-ID variables.
 
-## API reference
+## API
+
+Login uses form fields `username` and `password`; other request bodies use JSON.
+Send access tokens as `Authorization: Bearer <access_token>`.
 
 ### Authentication and users
 
 | Method | Path | Access | Success | Purpose |
 |---|---|---|---|---|
-| `POST` | `/users/register` | Public | `201` | Register a `USER` account |
-| `POST` | `/users/login` | Public | `200` | Exchange form credentials for an access/refresh pair |
-| `POST` | `/users/refresh` | Refresh token in JSON | `200` | Exchange `{"refresh_token": "..."}` for a new pair |
-| `POST` | `/users/change-password` | Access token | `204` | Change password and invalidate existing tokens |
-| `GET` | `/users/me` | Access token | `200` | Read the current user's public profile |
+| `POST` | `/users/register` | Public | `201` | Register a `USER` |
+| `POST` | `/users/login` | Public | `200` | Exchange credentials for a token pair |
+| `POST` | `/users/refresh` | Refresh token in JSON | `200` | Renew with `{"refresh_token": "..."}` |
+| `POST` | `/users/change-password` | Access token | `204` | Change password and revoke existing tokens |
+| `GET` | `/users/me` | Access token | `200` | Read the current profile |
 | `PATCH` | `/users/{user_id}/role` | Admin | `200` | Set `{"role": "ADMIN"}` or `{"role": "USER"}` |
-| `POST` | `/users/logout` | Access token | `204` | Invalidate all existing tokens for the current user |
+| `POST` | `/users/logout` | Access token | `204` | Revoke all existing tokens for the account |
 
-Refresh tokens are checked against the current database token version. Refreshing issues a new pair but does not invalidate the previous refresh token; it remains usable until expiration or token-version invalidation. Authorization uses the user's current database role.
+Tokens use HS256 and a shared signing secret. Refreshing does not invalidate the
+previous refresh token; it remains usable until expiry or token-version revocation.
 
 ### Movies
 
 | Method | Path | Access | Success | Purpose |
 |---|---|---|---|---|
-| `POST` | `/movies` | Admin | `201` | Create a movie and schedule rating enrichment |
-| `GET` | `/movies` | Access token | `200` | List movies with optional filtering and sorting |
+| `POST` | `/movies` | Admin | `201` | Create and schedule enrichment |
+| `GET` | `/movies` | Access token | `200` | List, filter, and sort |
 | `GET` | `/movies/{movie_id}` | Access token | `200` | Fetch one movie |
-| `PUT` | `/movies/{movie_id}` | Admin | `200` | Apply supplied movie fields |
-| `DELETE` | `/movies/{movie_id}` | Admin | `204` | Delete a movie; response body is empty |
+| `PUT` | `/movies/{movie_id}` | Admin | `200` | Update supplied fields |
+| `DELETE` | `/movies/{movie_id}` | Admin | `204` | Delete a movie |
 
-List options:
+List parameters:
 
-- `q`: title substring filter, parameterized as SQL `LIKE` (SQL wildcard characters retain their meaning).
+- `q`: title substring using SQL `LIKE`; `%` and `_` retain wildcard meaning.
 - `sort_by`: `rating` (default), `title`, `release_year`, or `created_at`.
 - `order`: `desc` (default) or `asc`.
 
-Rating sorting puts null ratings last and uses `id` to break ties. Invalid sort values produce `422`.
+Null ratings sort last; ID breaks ties. Lists are not paginated.
 
-### Validation and update behavior
+### Validation and updates
 
-Usernames contain 2-16 letters, digits, or underscores. Passwords are 8-64 characters and must contain uppercase and lowercase letters, a digit, and an accepted special character. A new password must differ from the old one.
+Usernames contain 2-16 ASCII letters, digits, or underscores. Passwords are 8-64
+characters with uppercase/lowercase letters, a digit, and an accepted special
+character. A new password must differ from the old one.
 
-Movie titles are stripped of surrounding whitespace, must be nonempty, and have a maximum input length of 255 characters. Director names are optional and limited to 255 characters. Release years are optional and must be between 1888 and the current year plus two.
+Movie titles are trimmed, nonempty, and limited to 255 input characters. Directors
+are optional and limited to 255 characters. Release years are optional, from 1888
+through the current year plus two.
 
-Although updates use `PUT`, they apply only supplied fields:
+`PUT` applies only supplied fields. For example:
 
 ```json
 {"director": null, "release_year": null}
 ```
 
-This clears those two values and leaves the title unchanged. An omitted field stays unchanged. Explicit `title: null` is rejected with `422`; an empty update produces `400`.
-
-Missing movies produce `404`. Invalid or expired authentication produces `401`; authenticated non-admin movie writes produce `403`. Request validation errors produce `422`.
-
-Registering a username that already exists produces `409`, including when concurrent registrations both pass the initial availability check. Other database failures remain server errors rather than username conflicts.
+This clears those values and preserves the title. A null title returns `422`;
+an empty update returns `400`.
 
 ### Rating enrichment
 
-Creation returns the movie before the background lookup completes. Enrichment uses an OMDb title lookup with a configurable HTTP timeout (10 seconds by default) and stores a rating between 0 and 10 when available. Updating a title does not automatically rerun enrichment.
+Creation returns before the in-process OMDb lookup completes. Responses expose
+`enrichment_status`: `pending`, `success`, `not_found`, or `failed`. Internal error
+text is not returned; `not_found` requires the stored message `Movie not found in OMDb.`.
 
-Movie responses expose `enrichment_status`:
+Ratings range from 0 to 10. Failures are logged without undoing creation. There is
+no durable queue or automatic retry, and title changes do not rerun enrichment.
 
-| Status | Derived from stored values |
+### Errors
+
+[exception_handlers.py](exception_handlers.py) maps application errors centrally.
+
+| Status | Meaning |
 |---|---|
-| `pending` | No rating, completion timestamp, or error |
-| `success` | A rating exists |
-| `not_found` | Error exactly equals `Movie not found in OMDb.` |
-| `failed` | Other completed lookups without a rating, or other errors |
+| `400` | Empty movie update or incorrect old password |
+| `401` | Missing, invalid, expired, or revoked authentication; includes a bearer challenge |
+| `403` | Authenticated user lacks admin permission |
+| `404` | Requested resource is missing |
+| `409` | Duplicate username or unique-key conflict |
+| `422` | Request validation failed |
+| `500` | Failed operation, database failure, or unexpected error |
 
-The internal `enrichment_error` is excluded from responses. OMDb error text is stored as returned, so a differently worded not-found message is reported as `failed`. Fetch and persistence failures are logged without undoing movie creation. Tasks run in the API process; there is no durable queue or automatic retry.
+Database failures return `{"detail": "Database operation failed."}`; unexpected
+failures return `{"detail": "Internal server error."}`. Details are logged server-side.
 
-## SQL query files
+## Development
 
-Repository queries live in `data/sql/movies/` and `data/sql/users/`. The loader and typed query registry follow FleetFlow's pattern:
+Routers enforce access and call services; services apply business rules;
+repositories execute SQL and validate rows. Each database helper uses its own
+connection and commits writes independently. Password replacement and token
+revocation share one statement; read/write/reload sequences are separate operations.
 
-- `data/loader.py` reads UTF-8 SQL relative to its own directory, strips surrounding whitespace, and caches successful reads. Paths must remain inside `data/sql/`; missing and empty files raise descriptive errors.
-- `data/queries.py` exposes `QUERIES.movies` and `QUERIES.users` as immutable typed query groups, loaded independently on first access and cached afterward.
-- Repositories select statements from the registry and pass values separately using MariaDB's `?` placeholders. Movie filtering, sorting, and partial updates use file-backed templates; only whitelisted columns, fixed sort directions, and trusted SQL fragments are formatted into them.
+SQL lives in `data/sql/` and must be deployed with the Python source. See the
+[SQL reference](data/sql/README.md) for bindings and template rules.
 
-For example, `create_user()` executes `QUERIES.users.create` from `data/sql/users/create.sql` with a separate tuple of username, password hash, and role. Restart the application after editing query files so both loader and registry caches are rebuilt. Deploy the SQL files alongside the Python modules.
+Logging starts with the application. Output goes to stdout and optionally
+`LOG_FILE`, rotating at 10 MiB with five backups. Request records contain method,
+path, status, and response time, excluding background work. They omit query
+strings, headers, and bodies; database debug records omit bound values.
 
-See [data/sql/README.md](data/sql/README.md) for the complete binding and template
-contract, including the steps for adding a query.
-
-## Repository error types
-
-Persistence errors are driver-independent classes defined in `utils/errors.py`:
-
-| Type | Meaning |
-|---|---|
-| `RepositoryError` | Common base for repository failures; retains `RuntimeError` compatibility |
-| `DuplicateKeyError` | Unique-key conflict, identified by MariaDB error `1062` and SQL state `23000` |
-| `DatabaseError` | Other database execution or connection failure |
-
-`DuplicateKeyError` and `DatabaseError` are separate subclasses of `RepositoryError`. The database helpers chain the original driver exception and preserve existing repository errors unchanged. Failed inserts and updates roll back and close their resources. General driver details are logged server-side; translated error messages do not embed them. Duplicate-key conflicts produce a generic debug record rather than an unexpected-failure traceback.
-
-Repositories propagate these errors to services. Registration catches `DuplicateKeyError` from the insert and translates it into `UsernameAlreadyExistsError`, which the shared conflict handler maps to `409`. The initial username check remains an early rejection; the database unique constraint handles concurrent inserts. Foreign-key, nullability, syntax, and connection errors are not translated into username conflicts.
-
-## Centralized HTTP exception handling
-
-`exception_handlers.py` owns HTTP error mapping. `main.py` registers it before serving requests; routers call services directly, and authentication dependencies raise typed application errors. When embedding the routers in a separate FastAPI app, call `register_exception_handlers(app)` on that app too.
-
-| Error | HTTP behavior |
-|---|---|
-| `AuthenticationError`, including invalid credentials/access/refresh tokens | `401` with `WWW-Authenticate: Bearer` |
-| `AuthorizationError` | `403` |
-| `UsernameAlreadyExistsError` | `409` with the application's public message |
-| `DuplicateKeyError` | `409` with a generic unique-key conflict message |
-| `MovieNotFoundError`, `UserNotFoundError` | `404` |
-| `EmptyMovieUpdateError`, `IncorrectOldPasswordError` | `400` |
-| `UserCreationError`, `MovieCreationError`, `MovieDeleteError` | `500` with the application-defined public message |
-| Other `RepositoryError` subclasses, including `DatabaseError` | `500`, `{"detail": "Database operation failed."}` |
-| Unexpected exceptions or unclassified service errors | `500`, `{"detail": "Internal server error."}` |
-
-Server failures are logged with explicit traceback information and method/path metadata. Generic repository and unexpected-error responses exclude driver/internal details. FastAPI's built-in `HTTPException` handling and `422` request-validation responses remain intact.
-
-User errors distinguish operation context: a registration reload failure raises `UserCreationError` (`500`), a refresh token belonging to a deleted user raises `InvalidRefreshTokenError` (`401`), and an account-management target that does not exist raises `UserNotFoundError` (`404`). Handlers do not infer these meanings from URL paths.
-
-## Application and request logging
-
-The FastAPI lifespan configures logging at startup, so the standard `python -m uvicorn main:app --reload` command enables it automatically. Application startup/shutdown and service records use a timestamp, severity, logger name, and message. `LOG_LEVEL` controls the minimum severity; invalid settings or an unwritable `LOG_FILE` destination fail startup.
-
-For optional file output, set:
-
-```dotenv
-LOG_LEVEL=INFO
-LOG_FILE=logs/application.log
-```
-
-File paths are relative to the working directory unless absolute. Parent directories are created automatically. File output uses UTF-8 and rotates at **10 MiB**, retaining **five backups**, alongside stdout output. Restart after changing settings; replacing the cached `LoggingConfig` alone does not reconfigure installed handlers.
-
-The request middleware records method, path, status, and elapsed milliseconds, for example:
-
-```text
-2026-10-17 12:00:00 | INFO     | middleware.request_logging | GET '/movies' -> 200 (3.2ms)
-```
-
-Response timing ends when the last body chunk has been sent, including streamed responses, and excludes subsequent background work. Handled errors keep their HTTP status. Unhandled failures include a traceback and propagate normally; failures after response completion are identified separately and retain the status already delivered to the client. WebSocket and lifespan messages pass through without HTTP request records.
-
-Request records exclude query strings, authorization headers, and request bodies; control characters in paths are escaped. Database debug records omit bound parameter values. Routine HTTP client URL logs are suppressed to avoid recording OMDb API keys, and Uvicorn's duplicate access records are disabled at ordinary INFO/DEBUG severity. Uvicorn's error logger remains available.
-
-## Testing and development checks
-
-The suite uses `unittest`, including asynchronous service tests and FastAPI `TestClient` HTTP tests:
+Run the suite with:
 
 ```shell
-python -m unittest discover -s tests -t . -v
-python -m unittest tests.services.test_user_service -v
-python -m ruff check
-python -m ruff check data/database.py data/loader.py data/queries.py data/models.py
-python -m ruff check tests/data/test_database.py tests/data/test_sql_loader.py
-python -m pyright --pythonpath .venv/Scripts/python.exe
+python -m unittest discover -s tests -t .
 ```
 
-On Linux/macOS, use `.venv/bin/python` for Pyright's interpreter path. Select the same environment in VS Code/Pylance so it can find runtime packages and type stubs. Ruff configuration is stored in `pyproject.toml`; strict Pyright settings are not currently committed there.
-
-The current suite contains **210 tests** covering typed configuration, centralized exception handlers, application/request logging, SQL loading, database helpers, JWT handling, movie/user repositories, movie/user services, OMDb enrichment, and HTTP routes. Handler tests cover status mapping, bearer challenges, sanitization, framework validation, contextual user errors, and main-app/request-logging integration. Typed-error tests cover duplicate classification, unrelated integrity/connection failures, rollback and cleanup, original exception causes, and registration conflicts after a successful pre-check. Logging tests cover startup, level filtering, rotating files, cache lifecycle, request privacy, streaming, and exception handling. SQL-loader tests cover real files, caching, missing/empty files, path validation, working-directory independence, and lazy query groups. Configuration tests cover defaults, validation, immutability, secret-safe representations, cache overrides/resets, and independent loading. Movie-router tests exercise real JWT and role checks while mocking database access. Users-router HTTP tests cover registration, atomic password-change revocation of real JWT pairs with mocked persistence, and failure handling for login, refresh, password changes, role updates, and logout. Database, repository, and enrichment tests use mocks rather than live MariaDB or OMDb services.
-
-For coverage, install the separate optional measurement tool:
-
-```shell
-python -m pip install coverage
-python -m coverage run --branch --source=exception_handlers,auth,config,data,dependencies,middleware,repositories,routers,services,utils -m unittest discover -s tests -t .
-python -m coverage report -m
-```
-
-Coverage measures exercised code, not every possible input or live database behavior.
-
-See [tests/README.md](tests/README.md) for the coverage matrix, isolation rules,
-focused test commands, and current integration-test limits.
+See the [test guide](tests/README.md) for focused runs, lint/type checks, and coverage.
+Tests use mocks for MariaDB and OMDb; they do not verify live-service behavior.
 
 ## Project structure
 
@@ -465,7 +346,7 @@ focused test commands, and current integration-test limits.
                                             └─────────────────────────────────────┘
 ```
 
-The database contains independent `users` and `movies` tables. Users store password hashes, roles, token versions, and creation timestamps. Movies store descriptive fields, rating/enrichment state, and creation/update timestamps. There are no foreign keys between these tables.
+The tables have no foreign keys or per-user movie ownership.
 
 ## Contributors
 
